@@ -167,91 +167,97 @@
       <div class="lg:col-span-7">
 
         <!-- 4. ALLOCATION FORM -->
-        <div class="panel p-5 sm:p-6 bg-carbon">
-          <div class="flex items-center justify-between mb-4">
+        <div class="panel p-4 sm:p-6 bg-carbon rounded-card hairline">
+          
+          <!-- Allocation Header & Total 100% Badge (Spacious on mobile) -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-4 hairline-b">
             <div>
-              <h3 class="text-heading-xs text-chalk">
-                Alokasi Portofolio <span id="labelCurrentStage" class="text-ash">Tahap 1</span>
+              <div class="meta text-smoke mb-1">Strategi Portofolio</div>
+              <h3 class="text-heading-xs text-chalk tracking-tight">
+                Alokasi Portofolio <span id="labelCurrentStage" class="text-ash font-mono font-normal">Tahap 1</span>
               </h3>
-              <p class="text-caption text-smoke">Atur 5 kelas aset. Total wajib tepat 100%.</p>
+              <p class="text-caption text-smoke mt-0.5">Atur bobot 5 kelas aset. Total alokasi wajib tepat 100%.</p>
             </div>
 
-            <!-- Sum Meter Badge -->
-            <div id="sumBadge" class="badge font-mono tabular">
-              Total: 100%
+            <!-- High-Contrast Sum Meter Badge (Spacious, prominent, not mepet) -->
+            <div class="flex items-center justify-between sm:justify-end gap-3 pt-1 sm:pt-0">
+              <span class="text-caption text-smoke sm:hidden font-mono text-[11px] uppercase tracking-wider">Total Terpilih:</span>
+              <div id="sumBadge" class="px-3.5 py-1.5 rounded-button font-mono text-sm font-semibold tabular border bg-obsidian text-white border-chalk shadow-sm">
+                Total: 100%
+              </div>
             </div>
           </div>
 
           <!-- Clean Segmented Presets Group -->
-          <div class="mb-4">
-            <div class="meta text-[11px] mb-1.5 text-smoke">Preset Strategi Cepat:</div>
-            <div class="inline-flex w-full rounded-card hairline overflow-hidden divide-x divide-graphite bg-obsidian text-caption font-mono" id="presetButtonsGroup">
-              <button type="button" onclick="applyPreset('rata')" class="flex-1 py-2 text-center text-smoke hover:text-chalk hover:bg-carbon transition-colors active:bg-graphite">
+          <div class="mb-5">
+            <div class="meta text-[11px] mb-2 text-smoke">Preset Strategi Cepat:</div>
+            <div class="grid grid-cols-3 rounded-card hairline overflow-hidden divide-x divide-graphite bg-obsidian text-caption font-mono" id="presetButtonsGroup">
+              <button type="button" onclick="applyPreset('rata')" class="py-2.5 px-1 sm:px-2 text-center text-smoke hover:text-chalk hover:bg-carbon transition-colors active:bg-graphite text-xs cursor-pointer">
                 Rata (20%)
               </button>
-              <button type="button" onclick="applyPreset('konservatif')" class="flex-1 py-2 text-center text-smoke hover:text-chalk hover:bg-carbon transition-colors active:bg-graphite">
+              <button type="button" onclick="applyPreset('konservatif')" class="py-2.5 px-1 sm:px-2 text-center text-smoke hover:text-chalk hover:bg-carbon transition-colors active:bg-graphite text-xs cursor-pointer">
                 Konservatif
               </button>
-              <button type="button" onclick="applyPreset('agresif')" class="flex-1 py-2 text-center text-smoke hover:text-chalk hover:bg-carbon transition-colors active:bg-graphite">
+              <button type="button" onclick="applyPreset('agresif')" class="py-2.5 px-1 sm:px-2 text-center text-smoke hover:text-chalk hover:bg-carbon transition-colors active:bg-graphite text-xs cursor-pointer">
                 Agresif
               </button>
             </div>
           </div>
 
-          <form id="formAllocation" onsubmit="handleAllocationSubmit(event)" class="space-y-4">
+          <form id="formAllocation" onsubmit="handleAllocationSubmit(event)" class="space-y-3.5">
 
             <!-- 1. Sukuk -->
-            <div class="panel p-3.5 bg-obsidian">
+            <div class="panel p-3.5 sm:p-4 bg-obsidian rounded-card hairline">
               <div class="flex items-center justify-between mb-2">
-                <span class="text-caption text-chalk">Sukuk / SBN</span>
-                <span class="font-mono text-caption text-ash tabular" id="valSukuk">20%</span>
+                <span class="text-sm font-medium text-chalk">Sukuk / SBN</span>
+                <span class="font-mono text-sm font-semibold text-white tabular" id="valSukuk">20%</span>
               </div>
-              <input type="range" id="rangeSukuk" min="0" max="100" step="5" value="20" oninput="onSliderChange('sukuk', this.value)">
-              <div class="text-[11px] text-smoke mt-1">Kupon 7%/thn, aman & dijamin negara.</div>
+              <input type="range" id="rangeSukuk" min="0" max="100" step="5" value="20" oninput="onSliderChange('sukuk', this.value)" class="w-full py-2 my-0.5 cursor-pointer">
+              <div class="text-[11px] text-smoke mt-1 leading-snug">Kupon 7%/thn, aman & dijamin negara.</div>
             </div>
 
             <!-- 2. Saham -->
-            <div class="panel p-3.5 bg-obsidian">
+            <div class="panel p-3.5 sm:p-4 bg-obsidian rounded-card hairline">
               <div class="flex items-center justify-between mb-2">
-                <span class="text-caption text-chalk">Saham</span>
-                <span class="font-mono text-caption text-ash tabular" id="valSaham">20%</span>
+                <span class="text-sm font-medium text-chalk">Saham</span>
+                <span class="font-mono text-sm font-semibold text-white tabular" id="valSaham">20%</span>
               </div>
-              <input type="range" id="rangeSaham" min="0" max="100" step="5" value="20" oninput="onSliderChange('saham', this.value)">
-              <div class="text-[11px] text-smoke mt-1">Potensi imbal hasil tinggi, volatilitas tinggi.</div>
+              <input type="range" id="rangeSaham" min="0" max="100" step="5" value="20" oninput="onSliderChange('saham', this.value)" class="w-full py-2 my-0.5 cursor-pointer">
+              <div class="text-[11px] text-smoke mt-1 leading-snug">Potensi imbal hasil tinggi, volatilitas tinggi.</div>
             </div>
 
             <!-- 3. RDPU -->
-            <div class="panel p-3.5 bg-obsidian">
+            <div class="panel p-3.5 sm:p-4 bg-obsidian rounded-card hairline">
               <div class="flex items-center justify-between mb-2">
-                <span class="text-caption text-chalk">RD Pasar Uang</span>
-                <span class="font-mono text-caption text-ash tabular" id="valRdpu">20%</span>
+                <span class="text-sm font-medium text-chalk">RD Pasar Uang</span>
+                <span class="font-mono text-sm font-semibold text-white tabular" id="valRdpu">20%</span>
               </div>
-              <input type="range" id="rangeRdpu" min="0" max="100" step="5" value="20" oninput="onSliderChange('rdpu', this.value)">
-              <div class="text-[11px] text-smoke mt-1">Stabil ±4,5%/thn, likuiditas instan.</div>
+              <input type="range" id="rangeRdpu" min="0" max="100" step="5" value="20" oninput="onSliderChange('rdpu', this.value)" class="w-full py-2 my-0.5 cursor-pointer">
+              <div class="text-[11px] text-smoke mt-1 leading-snug">Stabil ±4,5%/thn, likuiditas instan.</div>
             </div>
 
             <!-- 4. Emas -->
-            <div class="panel p-3.5 bg-obsidian">
+            <div class="panel p-3.5 sm:p-4 bg-obsidian rounded-card hairline">
               <div class="flex items-center justify-between mb-2">
-                <span class="text-caption text-chalk">Emas</span>
-                <span class="font-mono text-caption text-ash tabular" id="valEmas">20%</span>
+                <span class="text-sm font-medium text-chalk">Emas</span>
+                <span class="font-mono text-sm font-semibold text-white tabular" id="valEmas">20%</span>
               </div>
-              <input type="range" id="rangeEmas" min="0" max="100" step="5" value="20" oninput="onSliderChange('emas', this.value)">
-              <div class="text-[11px] text-smoke mt-1">Lindung nilai (hedging) krisis & geopolitik.</div>
+              <input type="range" id="rangeEmas" min="0" max="100" step="5" value="20" oninput="onSliderChange('emas', this.value)" class="w-full py-2 my-0.5 cursor-pointer">
+              <div class="text-[11px] text-smoke mt-1 leading-snug">Lindung nilai (hedging) krisis & geopolitik.</div>
             </div>
 
             <!-- 5. Campuran -->
-            <div class="panel p-3.5 bg-obsidian">
+            <div class="panel p-3.5 sm:p-4 bg-obsidian rounded-card hairline">
               <div class="flex items-center justify-between mb-2">
-                <span class="text-caption text-chalk">RD Campuran</span>
-                <span class="font-mono text-caption text-ash tabular" id="valCampuran">20%</span>
+                <span class="text-sm font-medium text-chalk">RD Campuran</span>
+                <span class="font-mono text-sm font-semibold text-white tabular" id="valCampuran">20%</span>
               </div>
-              <input type="range" id="rangeCampuran" min="0" max="100" step="5" value="20" oninput="onSliderChange('campuran', this.value)">
-              <div class="text-[11px] text-smoke mt-1">Kombinasi saham & kupon berimbang.</div>
+              <input type="range" id="rangeCampuran" min="0" max="100" step="5" value="20" oninput="onSliderChange('campuran', this.value)" class="w-full py-2 my-0.5 cursor-pointer">
+              <div class="text-[11px] text-smoke mt-1 leading-snug">Kombinasi saham & kupon berimbang.</div>
             </div>
 
-            <div class="pt-2">
-              <button type="submit" id="btnSubmitAllocation" class="btn-pill w-full">
+            <div class="pt-3 pb-8 sm:pb-2">
+              <button type="submit" id="btnSubmitAllocation" class="btn-pill w-full h-12 text-sm font-mono uppercase tracking-wider shadow-lg cursor-pointer">
                 Simpan Alokasi Tahap Ini ↗
               </button>
             </div>

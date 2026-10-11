@@ -282,17 +282,18 @@ function checkTotalSum() {
   const sum = allocation.sukuk + allocation.saham + allocation.rdpu + allocation.emas + allocation.campuran;
   const sumBadge = document.getElementById('sumBadge');
   const btnSubmit = document.getElementById('btnSubmitAllocation');
+  if (!sumBadge) return;
 
   sumBadge.innerText = `Total: ${sum}%`;
 
   if (sum === 100) {
-    sumBadge.className = 'badge font-mono tabular text-pulse border-pulse';
-    if (gameState && gameState.stage_input_open) {
+    sumBadge.className = 'px-3.5 py-1.5 rounded-button font-mono text-sm font-semibold tabular border bg-obsidian text-white border-chalk shadow-sm';
+    if (gameState && gameState.stage_input_open && btnSubmit) {
       btnSubmit.disabled = false;
     }
   } else {
-    sumBadge.className = 'badge font-mono tabular text-loss border-loss';
-    btnSubmit.disabled = true;
+    sumBadge.className = 'px-3.5 py-1.5 rounded-button font-mono text-sm font-semibold tabular border bg-obsidian text-loss border-loss shadow-sm';
+    if (btnSubmit) btnSubmit.disabled = true;
   }
 }
 
