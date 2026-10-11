@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Layar Fasilitator & Proyektor — Danarakca</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            obsidian: '#101010',
+            carbon: '#080808',
+            chalk: '#f3f3f3',
+            smoke: '#9c9c9c',
+            ash: '#c1c1c1',
+            graphite: '#212121',
+            iron: '#474747',
+            compass: '#6f6759',
+            pulse: '#98ff38',
+            loss: '#ff7a6b'
+          },
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace']
+          },
+          maxWidth: {
+            page: '1200px'
+          }
+        }
+      }
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-obsidian text-chalk min-h-screen flex flex-col">
+
+  <!-- Top Navigation Bar -->
+  <header class="hairline-b bg-obsidian sticky top-0 z-40">
+    <div class="w-full max-w-[1600px] mx-auto px-6 sm:px-10 h-16 flex items-center justify-between gap-4">
+      
+      <!-- Brand & Subtitle -->
+      <div class="flex items-center gap-3">
+        <img src="img/logo-danarakca.png" alt="Logo Danarakca" class="h-8 w-auto object-contain shrink-0">
+        <a href="index.html" class="text-heading-xs tracking-tight text-chalk hover:text-ash transition-colors font-medium">
+          Danarakca
+        </a>
+        <span class="text-graphite hidden md:inline">/</span>
+        <span class="text-caption font-mono text-smoke hidden md:inline uppercase tracking-wider text-[11px]">Kendali Fasilitator</span>
+      </div>
+
+      <!-- Live Session Status Metrics (High-Contrast Segmented Bar) -->
+      <div class="flex items-center gap-3">
+        
+        <div class="inline-flex items-center rounded-button hairline overflow-hidden bg-carbon divide-x divide-graphite font-mono">
+          <!-- Putaran -->
+          <div class="px-3.5 py-1.5 flex items-center gap-2">
+            <span class="text-[11px] uppercase tracking-wider text-smoke font-sans">Putaran</span>
+            <span class="text-sm font-semibold text-white tabular" id="badgeRound">0 / 30</span>
+          </div>
+
+          <!-- Waktu -->
+          <div class="hidden sm:flex px-3.5 py-1.5 items-center gap-2">
+            <span class="text-[11px] uppercase tracking-wider text-smoke font-sans">Waktu</span>
+            <span class="text-sm font-semibold text-white tabular" id="badgeSimTime">Tahun 1 · Awal</span>
+          </div>
+
+          <!-- Tahap -->
+          <div class="hidden md:flex px-3.5 py-1.5 items-center gap-2">
+            <span class="text-[11px] uppercase tracking-wider text-smoke font-sans">Tahap</span>
+            <span class="text-sm font-semibold text-white tabular" id="badgeStage">1 / 3</span>
+          </div>
+
+          <!-- Peserta -->
+          <div class="px-3.5 py-1.5 flex items-center gap-2">
+            <span class="text-[11px] uppercase tracking-wider text-smoke font-sans">Peserta</span>
+            <span class="text-sm font-semibold text-white tabular" id="badgeParticipants">0</span>
+          </div>
+
+          <!-- Puncak -->
+          <div class="hidden lg:flex px-3.5 py-1.5 items-center gap-2">
+            <span class="text-[11px] uppercase tracking-wider text-smoke font-sans">Puncak</span>
+            <span class="text-sm font-semibold text-white tabular" id="badgeHighestWealth">Rp 100,0 Jt</span>
+          </div>
+        </div>
+
+        <!-- Kunci Layar (High Contrast Prominent Action Button) -->
+        <button onclick="adminLogout()" 
+          class="h-9 px-4 flex items-center gap-1.5 rounded-button bg-carbon border border-smoke/60 hover:border-chalk text-chalk hover:text-white font-mono text-xs font-medium tracking-tight transition-all cursor-pointer hover:bg-obsidian shadow-sm shrink-0" 
+          title="Kunci sesi fasilitator">
+          <span>Kunci Layar</span>
+          <span class="text-smoke">↗</span>
+        </button>
+
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Action & Control Bar -->
+  <section class="hairline-b bg-carbon py-3">
+    <div class="w-full max-w-[1600px] mx-auto px-6 sm:px-10 flex flex-wrap items-center justify-between gap-4">
+      
+      <!-- Primary Game Flow Controls -->
+      <div class="flex items-center gap-2.5 sm:gap-3">
+        <button id="btnDrawCard" onclick="drawCard()" class="btn-pill h-10 px-5 text-caption font-mono uppercase tracking-wider cursor-pointer">
+          <span id="btnDrawCardText">Kocok Kartu Putaran 1</span> ↗
+        </button>
+
+        <button id="btnToggleInput" onclick="toggleStageInput()" class="btn-ghost h-10 px-4 text-caption font-mono cursor-pointer">
+          <span id="btnToggleInputText">Input Alokasi: Terbuka</span>
+        </button>
+
+        <button id="btnNextStage" onclick="advanceStage()" class="btn-ghost h-10 px-4 text-caption font-mono cursor-pointer" disabled>
+          <span id="btnNextStageText">Maju ke Tahap 2</span>
+        </button>
+      </div>
+
+      <!-- Grouped Utilities Bar -->
+      <div class="h-10 inline-flex rounded-card hairline overflow-hidden divide-x divide-graphite bg-obsidian text-caption font-mono">
+        <button onclick="showQRModal()" class="h-full px-4 flex items-center text-smoke hover:text-chalk hover:bg-carbon transition-colors cursor-pointer" title="Tampilkan QR Peserta">
+          QR Peserta
+        </button>
+        <button onclick="seedMockUsers(200)" class="h-full px-4 flex items-center text-smoke hover:text-chalk hover:bg-carbon transition-colors cursor-pointer" title="Isi 200 Bot Simulasi">
+          Simulasi 200 Bot
+        </button>
+        <button onclick="exportCSV()" class="h-full px-4 flex items-center text-smoke hover:text-chalk hover:bg-carbon transition-colors cursor-pointer" title="Unduh Rekap CSV">
+          Unduh CSV
+        </button>
+        <button onclick="confirmReset()" class="h-full px-4 flex items-center text-loss hover:bg-loss/10 transition-colors cursor-pointer" title="Reset Sesi Game">
+          Reset Game
+        </button>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Main Grid -->
+  <main class="flex-grow w-full max-w-[1600px] mx-auto px-6 sm:px-10 py-6 grid grid-cols-1 lg:grid-cols-12 gap-8">
+    
+    <!-- LEFT: Kartu Skenario Aktif & Riwayat (7 Columns) -->
+    <div class="lg:col-span-7 flex flex-col gap-8">
+      
+      <!-- Card Display Container -->
+      <div class="panel p-6 sm:p-8 flex flex-col justify-between min-h-[420px] relative bg-carbon" id="cardDisplayBox">
+        
+        <!-- Placeholder State -->
+        <div id="cardPlaceholder" class="flex-grow flex flex-col items-center justify-center text-center p-8 my-auto">
+          <div class="w-10 h-10 rounded-full border border-graphite flex items-center justify-center text-ash mb-4 font-mono">
+            ?
+          </div>
+          <h2 class="text-heading-sm text-chalk mb-2">Belum Ada Kartu yang Dikocok</h2>
+          <p class="text-caption text-smoke max-w-md leading-relaxed">
+            Peserta dapat mengatur alokasi di ponsel masing-masing. Klik tombol <strong class="text-chalk font-normal">"Kocok Kartu Putaran 1"</strong> di atas untuk memicu skenario ekonomi makro.
+          </p>
+        </div>
+
+        <!-- Drawn Card Content -->
+        <div id="cardContent" class="hidden flex-col h-full justify-between card-in">
+          <div>
+            <!-- Meta row -->
+            <div class="flex items-center justify-between mb-4">
+              <span id="cardRoundTag" class="font-mono text-caption text-chalk px-2.5 py-1 bg-obsidian border border-graphite rounded-button">
+                PUTARAN 1 · K001
+              </span>
+              <span id="cardCategoryTag" class="text-caption text-ash font-mono uppercase">
+                KATEGORI
+              </span>
+            </div>
+
+            <!-- Title -->
+            <h2 id="cardTitle" class="text-heading sm:text-heading-lg text-chalk mb-4 tracking-tight">
+              Judul Skenario
+            </h2>
+
+            <!-- Narration -->
+            <div class="mb-5 p-4 panel bg-obsidian">
+              <div class="meta mb-1.5">Narasi Peristiwa (Fasilitator)</div>
+              <p id="cardNarration" class="text-body text-chalk leading-relaxed">
+                Narasi peristiwa ekonomi...
+              </p>
+            </div>
+
+            <!-- Economic Explanation -->
+            <div class="mb-6 p-4 panel bg-obsidian">
+              <div class="meta mb-1.5">Mekanisme Finansial & Edukasi</div>
+              <p id="cardExplanation" class="text-caption text-smoke leading-relaxed">
+                Penjelasan mengapa perubahan imbal hasil terjadi...
+              </p>
+            </div>
+          </div>
+
+          <!-- Asset Return Impact Grid -->
+          <div class="pt-4 hairline-t">
+            <div class="flex items-center justify-between mb-3">
+              <span class="meta">Dampak Imbal Hasil Kuartal Ini</span>
+              <span class="text-caption text-smoke font-mono">Dasar + Efek Kartu</span>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-3" id="assetImpactGrid">
+              <!-- Sukuk -->
+              <div class="panel p-3 text-center bg-obsidian">
+                <div class="meta mb-1">Sukuk/SBN</div>
+                <div class="text-heading-xs text-chalk tabular" id="impactSukuk">+1.8%</div>
+                <div class="text-[11px] text-smoke mt-1 font-mono" id="impactSukukSub">Dasar 1.8%</div>
+              </div>
+              <!-- Saham -->
+              <div class="panel p-3 text-center bg-obsidian">
+                <div class="meta mb-1">Saham</div>
+                <div class="text-heading-xs text-chalk tabular" id="impactSaham">-4.0%</div>
+                <div class="text-[11px] text-smoke mt-1 font-mono" id="impactSahamSub">Dasar 0.0%</div>
+              </div>
+              <!-- RDPU -->
+              <div class="panel p-3 text-center bg-obsidian">
+                <div class="meta mb-1">RD P. Uang</div>
+                <div class="text-heading-xs text-chalk tabular" id="impactRdpu">+1.1%</div>
+                <div class="text-[11px] text-smoke mt-1 font-mono" id="impactRdpuSub">Dasar 1.1%</div>
+              </div>
+              <!-- Emas -->
+              <div class="panel p-3 text-center bg-obsidian">
+                <div class="meta mb-1">Emas</div>
+                <div class="text-heading-xs text-chalk tabular" id="impactEmas">+6.2%</div>
+                <div class="text-[11px] text-smoke mt-1 font-mono" id="impactEmasSub">Dasar 0.2%</div>
+              </div>
+              <!-- Campuran -->
+              <div class="panel p-3 text-center bg-obsidian col-span-2 sm:col-span-1">
+                <div class="meta mb-1">Campuran</div>
+                <div class="text-heading-xs text-chalk tabular" id="impactCampuran">-1.3%</div>
+                <div class="text-[11px] text-smoke mt-1 font-mono" id="impactCampuranSub">Dasar 0.7%</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Recent 5 Cards Log -->
+      <div class="panel p-6">
+        <div class="meta mb-4">Riwayat 5 Kartu Terakhir</div>
+        <div class="flex flex-col gap-2" id="recentCardsList">
+          <div class="text-caption text-smoke italic py-2">Belum ada riwayat kartu sebelumnya.</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: Leaderboard Panel (5 Columns) -->
+    <div class="lg:col-span-5 flex flex-col gap-8">
+      
+      <div class="panel p-6 flex flex-col h-full bg-carbon">
+        
+        <!-- Leaderboard Header with Mode Tabs -->
+        <div class="flex items-center justify-between pb-4 hairline-b mb-4">
+          <div>
+            <h3 class="text-heading-xs text-chalk" id="lbTabTitle">Papan Peringkat (Top 10)</h3>
+            <p class="text-caption text-smoke" id="lbTabSub">Akumulasi total portofolio tertinggi</p>
+          </div>
+
+          <div class="inline-flex rounded-card hairline p-0.5 bg-obsidian text-caption font-mono">
+            <button id="btnTabTop10" onclick="switchLbTab('top10')" class="px-2.5 py-1 rounded-card bg-chalk text-obsidian transition-colors">
+              Top 10
+            </button>
+            <button id="btnTabTangguh" onclick="switchLbTab('tangguh')" class="px-2.5 py-1 rounded-card text-smoke hover:text-chalk transition-colors">
+              Tangguh
+            </button>
+          </div>
+        </div>
+
+        <!-- Table Container -->
+        <div class="flex-grow overflow-x-auto">
+          <table class="w-full text-left text-caption">
+            <thead>
+              <tr class="text-smoke hairline-b pb-2">
+                <th class="py-2 px-1 w-8 text-center meta">#</th>
+                <th class="py-2 px-1 w-8 text-center meta">±</th>
+                <th class="py-2 px-2 meta">Peserta</th>
+                <th class="py-2 px-2 text-right meta">Aset</th>
+                <th class="py-2 px-1 text-right meta">Return</th>
+                <th class="py-2 px-1 text-right meta">Max DD</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboardTbody" class="divide-y divide-graphite">
+              <tr>
+                <td colspan="6" class="text-center py-10 text-smoke italic">
+                  Menunggu peserta mendaftar...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Investor Tangguh Explanatory Note -->
+        <div class="mt-4 pt-3 hairline-t text-caption text-smoke leading-relaxed">
+          <span class="text-ash">Kriteria Investor Tangguh:</span> Nilai aset tertinggi di antara peserta dengan toleransi risiko disiplin (drawdown kumulatif ≤ 10%).
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- BOTTOM ROW: Charts Grid (Full 12 Columns) -->
+    <div class="lg:col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-8 pt-4 hairline-t">
+      
+      <!-- Chart 1: Top 5 Players Trend -->
+      <div class="panel p-6">
+        <div class="mb-4">
+          <div class="meta mb-1">Portofolio Peserta</div>
+          <h4 class="text-heading-xs text-chalk">Pertumbuhan Aset Top 5 Peserta</h4>
+        </div>
+        <div class="h-64 relative">
+          <canvas id="chartTopPlayers"></canvas>
+        </div>
+      </div>
+
+      <!-- Chart 2: 5 Asset Benchmark Indexes -->
+      <div class="panel p-6">
+        <div class="mb-4">
+          <div class="meta mb-1">Tolok Ukur Pasar</div>
+          <h4 class="text-heading-xs text-chalk">Indeks Kinerja 5 Kelas Aset (Basis = 100)</h4>
+        </div>
+        <div class="h-64 relative">
+          <canvas id="chartAssetIndexes"></canvas>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- QR Modal -->
+  <div id="modalQR" class="fixed inset-0 bg-obsidian/95 flex items-center justify-center p-4 z-50 hidden">
+    <div class="panel-deep max-w-md w-full p-6 sm:p-7 text-center relative card-in bg-carbon hairline">
+      <button onclick="hideQRModal()" class="absolute top-4 right-4 text-smoke hover:text-chalk p-1">
+        ✕
+      </button>
+
+      <div class="meta mb-1 text-smoke">Akses Peserta</div>
+      <h3 class="text-heading-xs text-chalk mb-1">Scan untuk Bergabung</h3>
+      <p class="text-caption text-smoke mb-5">Pemain memindai QR code ini melalui smartphone dari jaringan manapun.</p>
+      
+      <div class="bg-white p-3 rounded-card mx-auto w-52 h-52 flex items-center justify-center mb-5 border border-graphite">
+        <img id="qrImage" src="" alt="QR Code Peserta" class="w-full h-full object-contain">
+      </div>
+
+      <!-- Editable URL Input & Action Buttons -->
+      <div class="text-left mb-6">
+        <div class="flex items-center justify-between mb-1.5">
+          <label for="inputPlayerUrl" class="meta text-smoke">Tautan / URL Akses Peserta</label>
+          <button type="button" onclick="resetPlayerUrlDefault()" class="text-[11px] text-smoke hover:text-chalk underline cursor-pointer">
+            Reset default
+          </button>
+        </div>
+        <div class="flex items-center gap-2">
+          <input type="text" id="inputPlayerUrl" oninput="onPlayerUrlChange()" 
+            class="input-field flex-1 font-mono text-xs py-2 px-3 bg-obsidian border-graphite rounded-button focus:outline-none focus:border-chalk" 
+            placeholder="https://domain-anda.com/player.html">
+          <button type="button" onclick="copyPlayerUrl()" class="btn-ghost text-caption py-2 px-3 whitespace-nowrap cursor-pointer" id="btnCopyUrl">
+            Salin ↗
+          </button>
+        </div>
+        <div class="text-[11px] text-smoke mt-1.5 leading-relaxed">
+          Ubah URL di atas jika website telah di-deploy ke domain publik, IP server, atau tunnel (Cloudflare/Ngrok). QR code diperbarui otomatis.
+        </div>
+      </div>
+
+      <button type="button" onclick="hideQRModal()" class="btn-ghost w-full py-2.5 cursor-pointer">
+        Tutup
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal Konfirmasi Operasional (Pengganti confirm() basic) -->
+  <div id="modalConfirm" class="fixed inset-0 bg-obsidian/90 flex items-center justify-center p-4 z-50 hidden">
+    <div class="panel-deep max-w-md w-full p-6 sm:p-8 hairline bg-carbon rounded-card relative card-in">
+      <div class="meta mb-2 text-smoke" id="confirmModalMeta">Konfirmasi Operasional</div>
+      <h3 class="text-heading-xs text-chalk mb-2" id="confirmModalTitle">Judul Konfirmasi</h3>
+      <p class="text-caption text-smoke leading-relaxed mb-5" id="confirmModalMessage">Pesan penjelasan...</p>
+
+      <!-- Opsi Tambahan Khusus Reset -->
+      <div id="confirmModalExtra" class="mb-5 hidden">
+        <label class="flex items-center gap-3 p-3 panel bg-obsidian rounded-card cursor-pointer hover:border-smoke transition-colors">
+          <input type="checkbox" id="confirmModalCheckbox" checked class="w-4 h-4 rounded bg-carbon border-graphite accent-chalk cursor-pointer">
+          <span class="text-caption text-ash" id="confirmModalCheckboxLabel">Pertahankan data & alokasi peserta terdaftar</span>
+        </label>
+      </div>
+
+      <div class="flex items-center justify-end gap-3 pt-3 hairline-t">
+        <button type="button" onclick="closeConfirmModal(false)" class="btn-ghost text-caption py-2 px-4">
+          Batal
+        </button>
+        <button type="button" id="confirmModalBtnOk" class="btn-pill text-caption py-2 px-5">
+          <span id="confirmModalBtnOkText">Konfirmasi</span> ↗
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container (Pengganti alert() basic) -->
+  <div id="toastContainer" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <script src="facilitator.js"></script>
+</body>
+</html>

@@ -1,0 +1,1653 @@
+{
+  "status": "GAME_FINISHED",
+  "current_round": 30,
+  "current_stage": 3,
+  "stage_input_open": false,
+  "total_rounds": 30,
+  "rounds_per_stage": 10,
+  "total_stages": 3,
+  "drawn_cards": [
+    {
+      "round": 1,
+      "stage": 1,
+      "card_id": "K064",
+      "timestamp": "2026-10-08 15:35:28",
+      "card": {
+        "id": "K064",
+        "category": "Komoditas",
+        "title": "Harga Minyak Anjlok",
+        "narration": "Harga minyak dunia turun drastis karena kelebihan pasokan.",
+        "explanation": "Beban subsidi dan impor energi berkurang, positif untuk APBN dan inflasi.",
+        "return_sukuk": 0.0,
+        "return_saham": 0.03,
+        "return_rdpu": 0.0,
+        "return_emas": -0.025,
+        "return_campuran": 0.015
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": 0.03,
+        "rdpu": 0.011,
+        "emas": -0.023,
+        "campuran": 0.0224
+      },
+      "stage_factors": {
+        "sukuk": 1.0175,
+        "saham": 1.03,
+        "rdpu": 1.011,
+        "emas": 0.977,
+        "campuran": 1.0224
+      }
+    },
+    {
+      "round": 2,
+      "stage": 1,
+      "card_id": "K084",
+      "timestamp": "2026-10-08 15:35:29",
+      "card": {
+        "id": "K084",
+        "category": "Krisis (Black Swan)",
+        "title": "Krisis Nilai Tukar (Sudden Stop)",
+        "narration": "Arus modal asing tiba-tiba berhenti; rupiah jatuh bebas.",
+        "explanation": "Asing menjual aset rupiah serentak. Saham anjlok dalam, emas dalam rupiah melonjak. Sukuk negara yang dipegang hingga jatuh tempo tetap menerima imbalan dan pokok penuh.",
+        "return_sukuk": 0.0,
+        "return_saham": -0.2,
+        "return_rdpu": 0.003,
+        "return_emas": 0.12,
+        "return_campuran": -0.1
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": -0.2,
+        "rdpu": 0.013999999999999999,
+        "emas": 0.122,
+        "campuran": -0.0926
+      },
+      "stage_factors": {
+        "sukuk": 1.03530625,
+        "saham": 0.8240000000000001,
+        "rdpu": 1.025154,
+        "emas": 1.096194,
+        "campuran": 0.92772576
+      }
+    },
+    {
+      "round": 3,
+      "stage": 1,
+      "card_id": "K012",
+      "timestamp": "2026-10-08 15:35:30",
+      "card": {
+        "id": "K012",
+        "category": "Moneter & Suku Bunga",
+        "title": "Kurva Yield Mendatar",
+        "narration": "Yield jangka pendek naik mendekati jangka panjang; pasar khawatir perlambatan.",
+        "explanation": "Pasar khawatir perlambatan ekonomi → saham tertekan kekhawatiran laba, emas diburu. Pemegang sukuk negara ritel tidak terdampak: imbalan tetap dibayar.",
+        "return_sukuk": 0.0,
+        "return_saham": -0.06,
+        "return_rdpu": 0.0,
+        "return_emas": 0.05,
+        "return_campuran": -0.03
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": -0.06,
+        "rdpu": 0.011,
+        "emas": 0.052000000000000005,
+        "campuran": -0.0226
+      },
+      "stage_factors": {
+        "sukuk": 1.053424109375,
+        "saham": 0.77456,
+        "rdpu": 1.0364306939999999,
+        "emas": 1.1531960879999998,
+        "campuran": 0.906759157824
+      }
+    },
+    {
+      "round": 4,
+      "stage": 1,
+      "card_id": "K037",
+      "timestamp": "2026-10-08 15:35:30",
+      "card": {
+        "id": "K037",
+        "category": "Pasar Modal",
+        "title": "Skandal Saham Gorengan",
+        "narration": "Otoritas membongkar manipulasi harga beberapa saham.",
+        "explanation": "Kepercayaan investor ritel turun dan saham-saham spekulatif anjlok. Pelajaran: pilih saham berfundamental baik.",
+        "return_sukuk": 0.0,
+        "return_saham": -0.08,
+        "return_rdpu": 0.0,
+        "return_emas": 0.01,
+        "return_campuran": -0.04
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": -0.08,
+        "rdpu": 0.011,
+        "emas": 0.012,
+        "campuran": -0.032600000000000004
+      },
+      "stage_factors": {
+        "sukuk": 1.0718590312890626,
+        "saham": 0.7125952000000001,
+        "rdpu": 1.0478314316339998,
+        "emas": 1.1670344410559998,
+        "campuran": 0.8771988092789376
+      }
+    },
+    {
+      "round": 5,
+      "stage": 1,
+      "card_id": "K087",
+      "timestamp": "2026-10-08 15:35:30",
+      "card": {
+        "id": "K087",
+        "category": "Boom & Kabar Baik",
+        "title": "Arus Modal Asing Deras",
+        "narration": "Peringkat layak investasi dari semua lembaga memicu arus masuk besar.",
+        "explanation": "Dana institusi global yang hanya boleh membeli aset layak investasi mengalir deras ke pasar Indonesia; saham melonjak.",
+        "return_sukuk": 0.0,
+        "return_saham": 0.25,
+        "return_rdpu": 0.0,
+        "return_emas": -0.035,
+        "return_campuran": 0.125
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": 0.25,
+        "rdpu": 0.011,
+        "emas": -0.033,
+        "campuran": 0.1324
+      },
+      "stage_factors": {
+        "sukuk": 1.0906165643366212,
+        "saham": 0.8907440000000001,
+        "rdpu": 1.0593575773819737,
+        "emas": 1.1285223045011519,
+        "campuran": 0.9933399316274689
+      }
+    },
+    {
+      "round": 6,
+      "stage": 1,
+      "card_id": "K094",
+      "timestamp": "2026-10-08 15:35:31",
+      "card": {
+        "id": "K094",
+        "category": "Boom & Kabar Baik",
+        "title": "Proyek Strategis Rampung",
+        "narration": "Sejumlah proyek infrastruktur strategis selesai dan beroperasi.",
+        "explanation": "Biaya logistik turun dan produktivitas naik, sehingga prospek laba jangka panjang membaik.",
+        "return_sukuk": 0.0,
+        "return_saham": 0.08,
+        "return_rdpu": 0.0,
+        "return_emas": 0.0,
+        "return_campuran": 0.04
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": 0.08,
+        "rdpu": 0.011,
+        "emas": 0.002,
+        "campuran": 0.0474
+      },
+      "stage_factors": {
+        "sukuk": 1.1097023542125122,
+        "saham": 0.9620035200000001,
+        "rdpu": 1.0710105107331753,
+        "emas": 1.130779349110154,
+        "campuran": 1.040424244386611
+      }
+    },
+    {
+      "round": 7,
+      "stage": 1,
+      "card_id": "K080",
+      "timestamp": "2026-10-08 15:35:32",
+      "card": {
+        "id": "K080",
+        "category": "Fiskal & SBN/Sukuk",
+        "title": "Stimulus Fiskal Jumbo",
+        "narration": "Pemerintah meluncurkan stimulus besar yang dibiayai penerbitan SBN.",
+        "explanation": "Belanja pemerintah mendorong ekonomi dan laba emiten, sehingga saham naik.",
+        "return_sukuk": 0.0,
+        "return_saham": 0.04,
+        "return_rdpu": 0.0,
+        "return_emas": 0.01,
+        "return_campuran": 0.02
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": 0.04,
+        "rdpu": 0.011,
+        "emas": 0.012,
+        "campuran": 0.0274
+      },
+      "stage_factors": {
+        "sukuk": 1.1291221454112312,
+        "saham": 1.0004836608,
+        "rdpu": 1.08279162635124,
+        "emas": 1.144348701299476,
+        "campuran": 1.0689318686828042
+      }
+    },
+    {
+      "round": 8,
+      "stage": 1,
+      "card_id": "K029",
+      "timestamp": "2026-10-08 15:35:33",
+      "card": {
+        "id": "K029",
+        "category": "Makro & Inflasi",
+        "title": "Investasi Asing Langsung Rekor",
+        "narration": "Realisasi investasi asing (FDI) mencapai rekor.",
+        "explanation": "FDI membawa valas, lapangan kerja, dan kepercayaan investor. Rupiah stabil dan saham naik.",
+        "return_sukuk": 0.0,
+        "return_saham": 0.06,
+        "return_rdpu": 0.0,
+        "return_emas": -0.01,
+        "return_campuran": 0.03
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": 0.06,
+        "rdpu": 0.011,
+        "emas": -0.008,
+        "campuran": 0.0374
+      },
+      "stage_factors": {
+        "sukuk": 1.148881782955928,
+        "saham": 1.060512680448,
+        "rdpu": 1.0947023342411035,
+        "emas": 1.1351939116890801,
+        "campuran": 1.1089099205715411
+      }
+    },
+    {
+      "round": 9,
+      "stage": 1,
+      "card_id": "K003",
+      "timestamp": "2026-10-08 15:35:36",
+      "card": {
+        "id": "K003",
+        "category": "Moneter & Suku Bunga",
+        "title": "BI Rate Turun 25 bps",
+        "narration": "Inflasi jinak, BI memangkas suku bunga acuan.",
+        "explanation": "Biaya dana lebih murah mendorong laba dan valuasi saham. Imbal hasil pasar uang sedikit turun.",
+        "return_sukuk": 0.0,
+        "return_saham": 0.04,
+        "return_rdpu": -0.002,
+        "return_emas": 0.025,
+        "return_campuran": 0.02
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": 0.04,
+        "rdpu": 0.009,
+        "emas": 0.027000000000000003,
+        "campuran": 0.0274
+      },
+      "stage_factors": {
+        "sukuk": 1.1689872141576567,
+        "saham": 1.10293318766592,
+        "rdpu": 1.1045546552492733,
+        "emas": 1.1658441473046852,
+        "campuran": 1.1392940523952015
+      }
+    },
+    {
+      "round": 10,
+      "stage": 1,
+      "card_id": "K089",
+      "timestamp": "2026-10-08 15:36:22",
+      "card": {
+        "id": "K089",
+        "category": "Boom & Kabar Baik",
+        "title": "Reformasi Struktural Besar",
+        "narration": "Pemerintah meloloskan reformasi perizinan dan kemudahan berusaha.",
+        "explanation": "Iklim investasi membaik, potensi pertumbuhan jangka panjang naik, dan premi risiko negara turun.",
+        "return_sukuk": 0.0,
+        "return_saham": 0.12,
+        "return_rdpu": 0.0,
+        "return_emas": 0.0,
+        "return_campuran": 0.06
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": 0.12,
+        "rdpu": 0.011,
+        "emas": 0.002,
+        "campuran": 0.0674
+      },
+      "stage_factors": {
+        "sukuk": 1.1894444904054158,
+        "saham": 1.2352851701858305,
+        "rdpu": 1.1167047564570152,
+        "emas": 1.1681758355992946,
+        "campuran": 1.216082471526638
+      }
+    },
+    {
+      "round": 11,
+      "stage": 2,
+      "card_id": "K025",
+      "timestamp": "2026-10-08 15:36:52",
+      "card": {
+        "id": "K025",
+        "category": "Makro & Inflasi",
+        "title": "PHK di Sektor Padat Karya",
+        "narration": "Gelombang PHK di industri tekstil dan alas kaki.",
+        "explanation": "Pendapatan rumah tangga turun sehingga konsumsi melemah. Saham tertekan, investor mencari aset aman.",
+        "return_sukuk": 0.0,
+        "return_saham": -0.08,
+        "return_rdpu": 0.0,
+        "return_emas": 0.025,
+        "return_campuran": -0.04
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": -0.08,
+        "rdpu": 0.011,
+        "emas": 0.027000000000000003,
+        "campuran": -0.032600000000000004
+      },
+      "stage_factors": {
+        "sukuk": 1.0175,
+        "saham": 0.92,
+        "rdpu": 1.011,
+        "emas": 1.027,
+        "campuran": 0.9674
+      }
+    },
+    {
+      "round": 12,
+      "stage": 2,
+      "card_id": "K023",
+      "timestamp": "2026-10-08 15:36:53",
+      "card": {
+        "id": "K023",
+        "category": "Makro & Inflasi",
+        "title": "Keyakinan Konsumen Melonjak",
+        "narration": "Indeks keyakinan konsumen mencapai level tertinggi.",
+        "explanation": "Konsumen yang optimistis cenderung belanja lebih banyak, sehingga prospek laba emiten konsumer membaik.",
+        "return_sukuk": 0.0,
+        "return_saham": 0.06,
+        "return_rdpu": 0.0,
+        "return_emas": -0.01,
+        "return_campuran": 0.03
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": 0.06,
+        "rdpu": 0.011,
+        "emas": -0.008,
+        "campuran": 0.0374
+      },
+      "stage_factors": {
+        "sukuk": 1.03530625,
+        "saham": 0.9752000000000001,
+        "rdpu": 1.0221209999999998,
+        "emas": 1.018784,
+        "campuran": 1.0035807600000002
+      }
+    },
+    {
+      "round": 13,
+      "stage": 2,
+      "card_id": "K028",
+      "timestamp": "2026-10-08 15:36:53",
+      "card": {
+        "id": "K028",
+        "category": "Makro & Inflasi",
+        "title": "Deflasi Beruntun",
+        "narration": "Indeks harga turun beberapa bulan berturut-turut.",
+        "explanation": "Deflasi karena permintaan lemah menandakan ekonomi lesu, sehingga laba emiten melemah.",
+        "return_sukuk": 0.0,
+        "return_saham": -0.05,
+        "return_rdpu": -0.001,
+        "return_emas": 0.01,
+        "return_campuran": -0.025
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": -0.05,
+        "rdpu": 0.009999999999999998,
+        "emas": 0.012,
+        "campuran": -0.0176
+      },
+      "stage_factors": {
+        "sukuk": 1.053424109375,
+        "saham": 0.92644,
+        "rdpu": 1.03234221,
+        "emas": 1.0310094079999998,
+        "campuran": 0.9859177386240002
+      }
+    },
+    {
+      "round": 14,
+      "stage": 2,
+      "card_id": "K085",
+      "timestamp": "2026-10-08 15:36:53",
+      "card": {
+        "id": "K085",
+        "category": "Krisis (Black Swan)",
+        "title": "Bank Besar Domestik Gagal",
+        "narration": "Sebuah bank besar dalam negeri mengalami gagal bayar.",
+        "explanation": "Kepercayaan pada sistem perbankan anjlok. Deposito dan reksa dana pasar uang yang menempatkan dana di bank itu ikut rugi. Dana masyarakat berpindah ke instrumen yang dijamin negara: sukuk dan SBN.",
+        "return_sukuk": 0.0,
+        "return_saham": -0.18,
+        "return_rdpu": -0.01,
+        "return_emas": 0.09,
+        "return_campuran": -0.09
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": -0.18,
+        "rdpu": 0.0009999999999999992,
+        "emas": 0.092,
+        "campuran": -0.08259999999999999
+      },
+      "stage_factors": {
+        "sukuk": 1.0718590312890626,
+        "saham": 0.7596808,
+        "rdpu": 1.0333745522099997,
+        "emas": 1.125862273536,
+        "campuran": 0.9044809334136578
+      }
+    },
+    {
+      "round": 15,
+      "stage": 2,
+      "card_id": "K019",
+      "timestamp": "2026-10-08 15:36:54",
+      "card": {
+        "id": "K019",
+        "category": "Makro & Inflasi",
+        "title": "PDB Melambat",
+        "narration": "Pertumbuhan ekonomi kuartal ini di bawah ekspektasi.",
+        "explanation": "Prospek laba melemah → saham turun. Investor beralih ke aset aman seperti emas dan surat berharga negara.",
+        "return_sukuk": 0.0,
+        "return_saham": -0.1,
+        "return_rdpu": 0.0,
+        "return_emas": 0.035,
+        "return_campuran": -0.05
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": -0.1,
+        "rdpu": 0.011,
+        "emas": 0.037000000000000005,
+        "campuran": -0.0426
+      },
+      "stage_factors": {
+        "sukuk": 1.0906165643366212,
+        "saham": 0.68371272,
+        "rdpu": 1.0447416722843097,
+        "emas": 1.1675191776568319,
+        "campuran": 0.8659500456502359
+      }
+    },
+    {
+      "round": 16,
+      "stage": 2,
+      "card_id": "K096",
+      "timestamp": "2026-10-08 15:36:54",
+      "card": {
+        "id": "K096",
+        "category": "Tenang / Netral",
+        "title": "Kuartal Tenang",
+        "narration": "Tidak ada kejutan berarti; pasar bergerak datar.",
+        "explanation": "Tidak ada kejutan berarti; tanpa katalis, saham melemah tipis. Di kuartal tenang, yang bekerja adalah imbal hasil dasar: imbalan sukuk dan bunga pasar uang.",
+        "return_sukuk": 0.0,
+        "return_saham": -0.01,
+        "return_rdpu": 0.0,
+        "return_emas": 0.0,
+        "return_campuran": -0.005
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": -0.01,
+        "rdpu": 0.011,
+        "emas": 0.002,
+        "campuran": 0.0024000000000000002
+      },
+      "stage_factors": {
+        "sukuk": 1.1097023542125122,
+        "saham": 0.6768755928000001,
+        "rdpu": 1.056233830679437,
+        "emas": 1.1698542160121455,
+        "campuran": 0.8680283257597965
+      }
+    },
+    {
+      "round": 17,
+      "stage": 2,
+      "card_id": "K033",
+      "timestamp": "2026-10-08 15:36:54",
+      "card": {
+        "id": "K033",
+        "category": "Pasar Modal",
+        "title": "Laba Emiten Mengecewakan",
+        "narration": "Banyak emiten melaporkan laba di bawah perkiraan analis.",
+        "explanation": "Revisi turun ekspektasi laba menurunkan harga wajar saham. Investor berpindah ke instrumen pendapatan tetap.",
+        "return_sukuk": 0.0,
+        "return_saham": -0.08,
+        "return_rdpu": 0.0,
+        "return_emas": 0.01,
+        "return_campuran": -0.04
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": -0.08,
+        "rdpu": 0.011,
+        "emas": 0.012,
+        "campuran": -0.032600000000000004
+      },
+      "stage_factors": {
+        "sukuk": 1.1291221454112312,
+        "saham": 0.6227255453760001,
+        "rdpu": 1.0678524028169107,
+        "emas": 1.1838924666042911,
+        "campuran": 0.8397306023400272
+      }
+    },
+    {
+      "round": 18,
+      "stage": 2,
+      "card_id": "K009",
+      "timestamp": "2026-10-08 15:36:55",
+      "card": {
+        "id": "K009",
+        "category": "Moneter & Suku Bunga",
+        "title": "Likuiditas Perbankan Ketat",
+        "narration": "Bank berebut dana pihak ketiga; bunga deposito naik.",
+        "explanation": "Likuiditas ketat menaikkan yield pasar dan menekan harga aset berisiko. Reksa dana pasar uang menikmati bunga deposito yang lebih tinggi.",
+        "return_sukuk": 0.0,
+        "return_saham": -0.04,
+        "return_rdpu": 0.004,
+        "return_emas": 0.0,
+        "return_campuran": -0.02
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": -0.04,
+        "rdpu": 0.015,
+        "emas": 0.002,
+        "campuran": -0.0126
+      },
+      "stage_factors": {
+        "sukuk": 1.148881782955928,
+        "saham": 0.59781652356096,
+        "rdpu": 1.0838701888591642,
+        "emas": 1.1862602515374998,
+        "campuran": 0.8291499967505429
+      }
+    },
+    {
+      "round": 19,
+      "stage": 2,
+      "card_id": "K045",
+      "timestamp": "2026-10-08 15:36:55",
+      "card": {
+        "id": "K045",
+        "category": "Pasar Modal",
+        "title": "Trading Halt Bursa",
+        "narration": "Indeks anjlok lebih dari 5% dalam sehari; perdagangan dihentikan sementara.",
+        "explanation": "Kepanikan jual memicu penghentian perdagangan. Aset aman seperti SBN dan emas menjadi tujuan pelarian dana.",
+        "return_sukuk": 0.0,
+        "return_saham": -0.15,
+        "return_rdpu": 0.0,
+        "return_emas": 0.03,
+        "return_campuran": -0.075
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": -0.15,
+        "rdpu": 0.011,
+        "emas": 0.032,
+        "campuran": -0.0676
+      },
+      "stage_factors": {
+        "sukuk": 1.1689872141576567,
+        "saham": 0.508144045026816,
+        "rdpu": 1.095792760936615,
+        "emas": 1.2242205795866998,
+        "campuran": 0.7730994569702062
+      }
+    },
+    {
+      "round": 20,
+      "stage": 2,
+      "card_id": "K005",
+      "timestamp": "2026-10-08 15:36:57",
+      "card": {
+        "id": "K005",
+        "category": "Moneter & Suku Bunga",
+        "title": "BI Rate Ditahan",
+        "narration": "BI mempertahankan suku bunga sesuai ekspektasi pasar.",
+        "explanation": "Tidak ada kejutan kebijakan. Pasar tenang dan cenderung sedikit positif karena ketidakpastian berkurang.",
+        "return_sukuk": 0.0,
+        "return_saham": 0.03,
+        "return_rdpu": 0.0,
+        "return_emas": 0.0,
+        "return_campuran": 0.015
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": 0.03,
+        "rdpu": 0.011,
+        "emas": 0.002,
+        "campuran": 0.0224
+      },
+      "stage_factors": {
+        "sukuk": 1.1894444904054158,
+        "saham": 0.5233883663776204,
+        "rdpu": 1.1078464813069175,
+        "emas": 1.2266690207458733,
+        "campuran": 0.7904168848063388
+      }
+    },
+    {
+      "round": 21,
+      "stage": 3,
+      "card_id": "K060",
+      "timestamp": "2026-10-08 15:37:12",
+      "card": {
+        "id": "K060",
+        "category": "Geopolitik & Global",
+        "title": "Serangan Siber ke Sistem Keuangan",
+        "narration": "Serangan siber mengganggu sistem pembayaran di beberapa negara.",
+        "explanation": "Kepercayaan terhadap sistem keuangan digital goyah sementara, investor beralih ke aset fisik seperti emas.",
+        "return_sukuk": 0.0,
+        "return_saham": -0.05,
+        "return_rdpu": 0.0,
+        "return_emas": 0.05,
+        "return_campuran": -0.025
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": -0.05,
+        "rdpu": 0.011,
+        "emas": 0.052000000000000005,
+        "campuran": -0.0176
+      },
+      "stage_factors": {
+        "sukuk": 1.0175,
+        "saham": 0.95,
+        "rdpu": 1.011,
+        "emas": 1.052,
+        "campuran": 0.9824
+      }
+    },
+    {
+      "round": 22,
+      "stage": 3,
+      "card_id": "K030",
+      "timestamp": "2026-10-08 15:37:12",
+      "card": {
+        "id": "K030",
+        "category": "Makro & Inflasi",
+        "title": "Kredit Perbankan Tumbuh Tinggi",
+        "narration": "Penyaluran kredit tumbuh dua digit.",
+        "explanation": "Kredit yang tumbuh mencerminkan ekspansi usaha dan mendorong laba bank sebagai saham berbobot terbesar di bursa.",
+        "return_sukuk": 0.0,
+        "return_saham": 0.06,
+        "return_rdpu": 0.001,
+        "return_emas": 0.0,
+        "return_campuran": 0.03
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": 0.06,
+        "rdpu": 0.012,
+        "emas": 0.002,
+        "campuran": 0.0374
+      },
+      "stage_factors": {
+        "sukuk": 1.03530625,
+        "saham": 1.007,
+        "rdpu": 1.023132,
+        "emas": 1.0541040000000002,
+        "campuran": 1.0191417600000001
+      }
+    },
+    {
+      "round": 23,
+      "stage": 3,
+      "card_id": "K032",
+      "timestamp": "2026-10-08 15:37:13",
+      "card": {
+        "id": "K032",
+        "category": "Pasar Modal",
+        "title": "Laba Emiten di Atas Ekspektasi",
+        "narration": "Musim laporan keuangan: mayoritas emiten mencetak laba melampaui estimasi.",
+        "explanation": "Harga saham pada akhirnya mengikuti laba. Laba yang lebih baik dari perkiraan mendorong reli.",
+        "return_sukuk": 0.0,
+        "return_saham": 0.1,
+        "return_rdpu": 0.0,
+        "return_emas": -0.01,
+        "return_campuran": 0.05
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": 0.1,
+        "rdpu": 0.011,
+        "emas": -0.008,
+        "campuran": 0.05740000000000001
+      },
+      "stage_factors": {
+        "sukuk": 1.053424109375,
+        "saham": 1.1077,
+        "rdpu": 1.034386452,
+        "emas": 1.0456711680000002,
+        "campuran": 1.077640497024
+      }
+    },
+    {
+      "round": 24,
+      "stage": 3,
+      "card_id": "K021",
+      "timestamp": "2026-10-08 15:37:13",
+      "card": {
+        "id": "K021",
+        "category": "Makro & Inflasi",
+        "title": "Surplus Neraca Dagang Besar",
+        "narration": "Ekspor melonjak; neraca perdagangan surplus besar.",
+        "explanation": "Pasokan valas bertambah sehingga rupiah stabil. Risiko eksternal turun, positif bagi saham.",
+        "return_sukuk": 0.0,
+        "return_saham": 0.03,
+        "return_rdpu": 0.0,
+        "return_emas": -0.01,
+        "return_campuran": 0.015
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": 0.03,
+        "rdpu": 0.011,
+        "emas": -0.008,
+        "campuran": 0.0224
+      },
+      "stage_factors": {
+        "sukuk": 1.0718590312890626,
+        "saham": 1.140931,
+        "rdpu": 1.0457647029719999,
+        "emas": 1.0373057986560001,
+        "campuran": 1.1017796441573378
+      }
+    },
+    {
+      "round": 25,
+      "stage": 3,
+      "card_id": "K007",
+      "timestamp": "2026-10-08 15:37:13",
+      "card": {
+        "id": "K007",
+        "category": "Moneter & Suku Bunga",
+        "title": "The Fed Pangkas Suku Bunga",
+        "narration": "The Fed menurunkan suku bunga; dolar AS melemah.",
+        "explanation": "Dana global mencari imbal hasil lebih tinggi di negara berkembang, termasuk saham Indonesia. Emas naik karena bunga riil turun.",
+        "return_sukuk": 0.0,
+        "return_saham": 0.18,
+        "return_rdpu": 0.0,
+        "return_emas": 0.095,
+        "return_campuran": 0.09
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": 0.18,
+        "rdpu": 0.011,
+        "emas": 0.097,
+        "campuran": 0.0974
+      },
+      "stage_factors": {
+        "sukuk": 1.0906165643366212,
+        "saham": 1.3462985799999998,
+        "rdpu": 1.0572681147046918,
+        "emas": 1.137924461125632,
+        "campuran": 1.2090929814982623
+      }
+    },
+    {
+      "round": 26,
+      "stage": 3,
+      "card_id": "K093",
+      "timestamp": "2026-10-08 15:37:24",
+      "card": {
+        "id": "K093",
+        "category": "Boom & Kabar Baik",
+        "title": "Reli Pasar Negara Berkembang",
+        "narration": "Investor global memindahkan dana besar ke pasar negara berkembang.",
+        "explanation": "Arus masuk ke pasar negara berkembang mengangkat harga saham. Emas kurang diminati.",
+        "return_sukuk": 0.0,
+        "return_saham": 0.2,
+        "return_rdpu": 0.0,
+        "return_emas": -0.02,
+        "return_campuran": 0.1
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": 0.2,
+        "rdpu": 0.011,
+        "emas": -0.018000000000000002,
+        "campuran": 0.10740000000000001
+      },
+      "stage_factors": {
+        "sukuk": 1.1097023542125122,
+        "saham": 1.6155582959999997,
+        "rdpu": 1.0688980639664434,
+        "emas": 1.1174418208253707,
+        "campuran": 1.3389495677111756
+      }
+    },
+    {
+      "round": 27,
+      "stage": 3,
+      "card_id": "K069",
+      "timestamp": "2026-10-08 15:37:26",
+      "card": {
+        "id": "K069",
+        "category": "Komoditas",
+        "title": "Permintaan Emas Domestik Naik",
+        "narration": "Bank bullion dan permintaan perhiasan mendorong pembelian emas.",
+        "explanation": "Masyarakat bersikap defensif dan memilih aset fisik, sehingga pasar saham sedikit sepi pembeli.",
+        "return_sukuk": 0.0,
+        "return_saham": -0.01,
+        "return_rdpu": 0.0,
+        "return_emas": 0.06,
+        "return_campuran": -0.005
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": -0.01,
+        "rdpu": 0.011,
+        "emas": 0.062,
+        "campuran": 0.0024000000000000002
+      },
+      "stage_factors": {
+        "sukuk": 1.1291221454112312,
+        "saham": 1.5994027130399997,
+        "rdpu": 1.0806559426700741,
+        "emas": 1.1867232137165438,
+        "campuran": 1.3421630466736822
+      }
+    },
+    {
+      "round": 28,
+      "stage": 3,
+      "card_id": "K091",
+      "timestamp": "2026-10-08 15:37:28",
+      "card": {
+        "id": "K091",
+        "category": "Boom & Kabar Baik",
+        "title": "Laba Perbankan Rekor",
+        "narration": "Bank-bank besar mencetak laba tertinggi sepanjang sejarah.",
+        "explanation": "Saham perbankan berbobot terbesar di indeks, sehingga labanya mengangkat IHSG.",
+        "return_sukuk": 0.0,
+        "return_saham": 0.06,
+        "return_rdpu": 0.0,
+        "return_emas": 0.0,
+        "return_campuran": 0.03
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": 0.06,
+        "rdpu": 0.011,
+        "emas": 0.002,
+        "campuran": 0.0374
+      },
+      "stage_factors": {
+        "sukuk": 1.148881782955928,
+        "saham": 1.6953668758223999,
+        "rdpu": 1.092543158039445,
+        "emas": 1.1890966601439767,
+        "campuran": 1.392359944619278
+      }
+    },
+    {
+      "round": 29,
+      "stage": 3,
+      "card_id": "K017",
+      "timestamp": "2026-10-08 15:37:53",
+      "card": {
+        "id": "K017",
+        "category": "Makro & Inflasi",
+        "title": "Inflasi Rendah & Stabil",
+        "narration": "Inflasi terkendali di dalam sasaran BI.",
+        "explanation": "Inflasi rendah membuka ruang penurunan bunga, positif untuk saham. Permintaan emas sebagai pelindung inflasi berkurang.",
+        "return_sukuk": 0.0,
+        "return_saham": 0.04,
+        "return_rdpu": 0.0,
+        "return_emas": -0.01,
+        "return_campuran": 0.02
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": 0.04,
+        "rdpu": 0.011,
+        "emas": -0.008,
+        "campuran": 0.0274
+      },
+      "stage_factors": {
+        "sukuk": 1.1689872141576567,
+        "saham": 1.763181550855296,
+        "rdpu": 1.1045611327778786,
+        "emas": 1.179583886862825,
+        "campuran": 1.4305106071018463
+      }
+    },
+    {
+      "round": 30,
+      "stage": 3,
+      "card_id": "K035",
+      "timestamp": "2026-10-08 15:38:10",
+      "card": {
+        "id": "K035",
+        "category": "Pasar Modal",
+        "title": "Bobot Indonesia di Indeks Global Naik",
+        "narration": "Penyedia indeks global menaikkan bobot saham Indonesia.",
+        "explanation": "Dana pasif global yang mengikuti indeks wajib membeli saham Indonesia → arus masuk besar.",
+        "return_sukuk": 0.0,
+        "return_saham": 0.08,
+        "return_rdpu": 0.0,
+        "return_emas": -0.01,
+        "return_campuran": 0.04
+      },
+      "returns": {
+        "sukuk": 0.0175,
+        "saham": 0.08,
+        "rdpu": 0.011,
+        "emas": -0.008,
+        "campuran": 0.0474
+      },
+      "stage_factors": {
+        "sukuk": 1.1894444904054158,
+        "saham": 1.9042360749237197,
+        "rdpu": 1.1167113052384352,
+        "emas": 1.1701472157679225,
+        "campuran": 1.498316809878474
+      }
+    }
+  ],
+  "available_cards": [
+    "K001",
+    "K002",
+    "K004",
+    "K006",
+    "K008",
+    "K010",
+    "K011",
+    "K013",
+    "K014",
+    "K015",
+    "K016",
+    "K018",
+    "K020",
+    "K022",
+    "K024",
+    "K026",
+    "K027",
+    "K031",
+    "K034",
+    "K036",
+    "K038",
+    "K039",
+    "K040",
+    "K041",
+    "K042",
+    "K043",
+    "K044",
+    "K046",
+    "K047",
+    "K048",
+    "K049",
+    "K050",
+    "K051",
+    "K052",
+    "K053",
+    "K054",
+    "K055",
+    "K056",
+    "K057",
+    "K058",
+    "K059",
+    "K061",
+    "K062",
+    "K063",
+    "K065",
+    "K066",
+    "K067",
+    "K068",
+    "K070",
+    "K071",
+    "K072",
+    "K073",
+    "K074",
+    "K075",
+    "K076",
+    "K077",
+    "K078",
+    "K079",
+    "K081",
+    "K082",
+    "K083",
+    "K086",
+    "K088",
+    "K090",
+    "K092",
+    "K095",
+    "K097",
+    "K098",
+    "K099",
+    "K100"
+  ],
+  "participants": {
+    "P01": {
+      "code": "P01",
+      "name": "tatang supriadi",
+      "allocations": {
+        "2": {
+          "sukuk": 20.0,
+          "saham": 20.0,
+          "rdpu": 20.0,
+          "emas": 20.0,
+          "campuran": 20.0
+        },
+        "3": {
+          "sukuk": 20.0,
+          "saham": 20.0,
+          "rdpu": 20.0,
+          "emas": 20.0,
+          "campuran": 20.0
+        }
+      },
+      "current_value": 157757536.60199642,
+      "prev_value": 152436198.41586447,
+      "current_rank": 2,
+      "prev_rank": 2,
+      "max_drawdown": 0.05633005012840875,
+      "history": [
+        {
+          "round": 0,
+          "value": 100000000,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 1,
+          "value": 101157999.99999999,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 2,
+          "value": 98167600.2,
+          "drawdown": 0.029561673817196654,
+          "rank": 2
+        },
+        {
+          "round": 3,
+          "value": 98487400.98398,
+          "drawdown": 0.026400274975978077,
+          "rank": 2
+        },
+        {
+          "round": 4,
+          "value": 97530378.26516,
+          "drawdown": 0.035860947575475866,
+          "rank": 2
+        },
+        {
+          "round": 5,
+          "value": 103251607.55694431,
+          "drawdown": 0.0,
+          "rank": 2
+        },
+        {
+          "round": 6,
+          "value": 106278399.56884906,
+          "drawdown": 0.0,
+          "rank": 2
+        },
+        {
+          "round": 7,
+          "value": 108513560.05089504,
+          "drawdown": 0.0,
+          "rank": 2
+        },
+        {
+          "round": 8,
+          "value": 110964012.59811306,
+          "drawdown": 0.0,
+          "rank": 2
+        },
+        {
+          "round": 9,
+          "value": 113632265.13545474,
+          "drawdown": 0.0,
+          "rank": 2
+        },
+        {
+          "round": 10,
+          "value": 118513854.48348388,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 11,
+          "value": 117160426.2652825,
+          "drawdown": 0.011419999999999986,
+          "rank": 2
+        },
+        {
+          "round": 12,
+          "value": 119817317.49766274,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 13,
+          "value": 119204398.3534849,
+          "drawdown": 0.005115447057056688,
+          "rank": 2
+        },
+        {
+          "round": 14,
+          "value": 116031169.14672191,
+          "drawdown": 0.031599341647877255,
+          "rank": 2
+        },
+        {
+          "round": 15,
+          "value": 115018648.1518491,
+          "drawdown": 0.04004988131959508,
+          "rank": 2
+        },
+        {
+          "round": 16,
+          "value": 115685979.27106202,
+          "drawdown": 0.03448030979896799,
+          "rank": 2
+        },
+        {
+          "round": 17,
+          "value": 114800179.30055104,
+          "drawdown": 0.04187323086422434,
+          "rank": 2
+        },
+        {
+          "round": 18,
+          "value": 114863123.93133251,
+          "drawdown": 0.041347892523356355,
+          "rank": 2
+        },
+        {
+          "round": 19,
+          "value": 113068001.99676792,
+          "drawdown": 0.05633005012840875,
+          "rank": 2
+        },
+        {
+          "round": 20,
+          "value": 114668441.22205272,
+          "drawdown": 0.042972721999976815,
+          "rank": 2
+        },
+        {
+          "round": 21,
+          "value": 114964285.80040562,
+          "drawdown": 0.040503591622736757,
+          "rank": 2
+        },
+        {
+          "round": 22,
+          "value": 117848977.07187746,
+          "drawdown": 0.016427845881490932,
+          "rank": 2
+        },
+        {
+          "round": 23,
+          "value": 121980210.76767628,
+          "drawdown": 0.0,
+          "rank": 2
+        },
+        {
+          "round": 24,
+          "value": 123787797.07652923,
+          "drawdown": 0.0,
+          "rank": 2
+        },
+        {
+          "round": 25,
+          "value": 133960275.865022,
+          "drawdown": 0.0,
+          "rank": 2
+        },
+        {
+          "round": 26,
+          "value": 143348167.41174564,
+          "drawdown": 0.0,
+          "rank": 2
+        },
+        {
+          "round": 27,
+          "value": 145355254.0608727,
+          "drawdown": 0.0,
+          "rank": 2
+        },
+        {
+          "round": 28,
+          "value": 149487477.2001604,
+          "drawdown": 0.0,
+          "rank": 2
+        },
+        {
+          "round": 29,
+          "value": 152436198.41586447,
+          "drawdown": 0.0,
+          "rank": 2
+        },
+        {
+          "round": 30,
+          "value": 157757536.60199642,
+          "drawdown": 0.0,
+          "rank": 2
+        }
+      ]
+    },
+    "CIHUY": {
+      "code": "CIHUY",
+      "name": "paman",
+      "allocations": {
+        "1": {
+          "sukuk": 20.0,
+          "saham": 20.0,
+          "rdpu": 20.0,
+          "emas": 40.0,
+          "campuran": 0.0
+        },
+        "2": {
+          "sukuk": 20.0,
+          "saham": 20.0,
+          "rdpu": 20.0,
+          "emas": 40.0,
+          "campuran": 0.0
+        },
+        "3": {
+          "sukuk": 20.0,
+          "saham": 20.0,
+          "rdpu": 20.0,
+          "emas": 40.0,
+          "campuran": 0.0
+        }
+      },
+      "current_value": 162454640.99316815,
+      "prev_value": 158615939.1759631,
+      "current_rank": 1,
+      "prev_rank": 1,
+      "max_drawdown": 0.0008610714648018547,
+      "history": [
+        {
+          "round": 0,
+          "value": 100000000,
+          "drawdown": 0.0,
+          "rank": 2
+        },
+        {
+          "round": 1,
+          "value": 100250000.0,
+          "drawdown": 0.0,
+          "rank": 2
+        },
+        {
+          "round": 2,
+          "value": 101536965.0,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 3,
+          "value": 103416139.5875,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 4,
+          "value": 103327090.90070124,
+          "drawdown": 0.0008610714648018547,
+          "rank": 1
+        },
+        {
+          "round": 5,
+          "value": 105955255.01441798,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 6,
+          "value": 108085501.66331992,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 7,
+          "value": 110021896.70322846,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 8,
+          "value": 111489692.42046385,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 9,
+          "value": 114163267.03364441,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 10,
+          "value": 117555721.76493703,
+          "drawdown": 0.0,
+          "rank": 2
+        },
+        {
+          "round": 11,
+          "value": 117614499.62581949,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 12,
+          "value": 119206092.42058107,
+          "drawdown": 0.0,
+          "rank": 2
+        },
+        {
+          "round": 13,
+          "value": 119300839.63735868,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 14,
+          "value": 120298036.49877135,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 15,
+          "value": 121179008.04397085,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 16,
+          "value": 121846980.7629131,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 17,
+          "value": 121963709.29435472,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 18,
+          "value": 122330576.52402335,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 19,
+          "value": 122760270.45005468,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 20,
+          "value": 123998183.93150973,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 21,
+          "value": 126044153.96637967,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 22,
+          "value": 128304547.86081313,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 23,
+          "value": 131112031.5975081,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 24,
+          "value": 132260587.94394633,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 25,
+          "value": 143094702.34132946,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 26,
+          "value": 149518060.5938067,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 27,
+          "value": 153326909.65324956,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 28,
+          "value": 156609337.7111172,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 29,
+          "value": 158615939.1759631,
+          "drawdown": 0.0,
+          "rank": 1
+        },
+        {
+          "round": 30,
+          "value": 162454640.99316815,
+          "drawdown": 0.0,
+          "rank": 1
+        }
+      ]
+    }
+  },
+  "asset_indexes": {
+    "sukuk": [
+      100.0,
+      101.75,
+      103.5306,
+      105.3424,
+      107.1859,
+      109.0617,
+      110.9703,
+      112.9123,
+      114.8883,
+      116.8988,
+      118.9445,
+      121.026,
+      123.144,
+      125.299,
+      127.4917,
+      129.7228,
+      131.9929,
+      134.3028,
+      136.6531,
+      139.0445,
+      141.4778,
+      143.9537,
+      146.4729,
+      149.0362,
+      151.6443,
+      154.2981,
+      156.9983,
+      159.7458,
+      162.5414,
+      165.3859,
+      168.2802
+    ],
+    "saham": [
+      100.0,
+      103.0,
+      82.4,
+      77.456,
+      71.2595,
+      89.0744,
+      96.2004,
+      100.0484,
+      106.0513,
+      110.2934,
+      123.5286,
+      113.6463,
+      120.4651,
+      114.4418,
+      93.8423,
+      84.4581,
+      83.6135,
+      76.9244,
+      73.8474,
+      62.7703,
+      64.6534,
+      61.4207,
+      65.1059,
+      71.6165,
+      73.765,
+      87.0427,
+      104.4512,
+      103.4067,
+      109.6111,
+      113.9955,
+      123.1151
+    ],
+    "rdpu": [
+      100.0,
+      101.1,
+      102.5154,
+      103.6431,
+      104.7832,
+      105.9358,
+      107.1011,
+      108.2792,
+      109.4703,
+      110.4555,
+      111.6705,
+      112.8989,
+      114.1408,
+      115.2822,
+      115.3975,
+      116.6669,
+      117.9502,
+      119.2477,
+      121.0364,
+      122.3678,
+      123.7138,
+      125.0747,
+      126.5756,
+      127.9679,
+      129.3755,
+      130.7986,
+      132.2374,
+      133.692,
+      135.1626,
+      136.6494,
+      138.1525
+    ],
+    "emas": [
+      100.0,
+      97.7,
+      109.6194,
+      115.3196,
+      116.7034,
+      112.8522,
+      113.0779,
+      114.4348,
+      113.5193,
+      116.5843,
+      116.8175,
+      119.9716,
+      119.0118,
+      120.4399,
+      131.5204,
+      136.3867,
+      136.6595,
+      138.2994,
+      138.576,
+      143.0104,
+      143.2964,
+      150.7478,
+      151.0493,
+      149.8409,
+      148.6422,
+      163.0605,
+      160.1254,
+      170.0532,
+      170.3933,
+      169.0302,
+      167.678
+    ],
+    "campuran": [
+      100.0,
+      102.24,
+      92.7726,
+      90.6759,
+      87.7199,
+      99.334,
+      104.0424,
+      106.8932,
+      110.891,
+      113.9294,
+      121.6082,
+      117.6438,
+      122.0437,
+      119.8957,
+      109.9923,
+      105.3066,
+      105.5593,
+      102.1181,
+      100.8314,
+      94.0152,
+      96.1211,
+      94.4294,
+      97.9611,
+      103.5841,
+      105.9044,
+      116.2195,
+      128.7015,
+      129.0104,
+      133.8354,
+      137.5025,
+      144.0201
+    ]
+  },
+  "stage_factors": {
+    "sukuk": 1.1894444904054158,
+    "saham": 1.9042360749237197,
+    "rdpu": 1.1167113052384352,
+    "emas": 1.1701472157679225,
+    "campuran": 1.498316809878474
+  },
+  "message": "Putaran 30: Kartu Bobot Indonesia di Indeks Global Naik keluar!"
+}

@@ -1,0 +1,18 @@
+core: user akan input ke excel
+
+ada modal, lalu persen ke investasi 
+
+
+ada kartu scenario (random) perlu kocok kartu, lalu nanti ada efek nya, asset berubah, nanti ada perubahan leaderboard
+
+
+tiap tahap, peserta bisa merubah investasi mereka
+
+
+
+req
+
+user kira kira 200
+dashboard 
+Riwayat pergerakan 
+perkembangan game
