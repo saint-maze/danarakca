@@ -1,0 +1,1 @@
+# Danarakca requires standard library only (Python 3.9+)

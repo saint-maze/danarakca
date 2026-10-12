@@ -11,11 +11,63 @@ class GameEngine:
         self.data_dir = data_dir
         self.cards_file = os.path.join(data_dir, 'cards.json')
         self.config_file = os.path.join(data_dir, 'config.json')
-        self.state_file = os.path.join(data_dir, 'state.json')
+
+        # Check for Upstash Redis / Vercel KV environment variables
+        self.redis_url = os.environ.get('UPSTASH_REDIS_REST_URL') or os.environ.get('KV_REST_API_URL')
+        self.redis_token = os.environ.get('UPSTASH_REDIS_REST_TOKEN') or os.environ.get('KV_REST_API_TOKEN')
+
+        # Check if environment is serverless / read-only (e.g. Vercel)
+        is_serverless = os.environ.get('VERCEL') == '1' or not os.access(data_dir, os.W_OK)
+        if is_serverless:
+            self.state_file = os.path.join('/tmp', 'danarakca_state.json')
+            if not os.path.exists(self.state_file):
+                default_state = os.path.join(data_dir, 'state.json')
+                if os.path.exists(default_state):
+                    try:
+                        import shutil
+                        shutil.copy2(default_state, self.state_file)
+                    except Exception:
+                        pass
+        else:
+            self.state_file = os.path.join(data_dir, 'state.json')
 
         self.load_cards()
         self.load_config()
         self.load_or_init_state()
+
+    def _load_from_redis(self):
+        if not self.redis_url or not self.redis_token:
+            return None
+        import urllib.request
+        try:
+            req = urllib.request.Request(f"{self.redis_url}/get/danarakca_state")
+            req.add_header("Authorization", f"Bearer {self.redis_token}")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                val = data.get("result")
+                if val:
+                    return json.loads(val) if isinstance(val, str) else val
+        except Exception as e:
+            print(f"Redis get error: {e}")
+        return None
+
+    def _save_to_redis(self):
+        if not self.redis_url or not self.redis_token:
+            return
+        import urllib.request
+        try:
+            raw_body = json.dumps(self.state)
+            req = urllib.request.Request(
+                f"{self.redis_url}/set/danarakca_state",
+                data=json.dumps(raw_body).encode('utf-8'),
+                method="POST"
+            )
+            req.add_header("Authorization", f"Bearer {self.redis_token}")
+            req.add_header("Content-Type", "application/json")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                pass
+        except Exception as e:
+            print(f"Redis set error: {e}")
 
     def load_cards(self):
         with open(self.cards_file, 'r', encoding='utf-8') as f:
@@ -26,19 +78,37 @@ class GameEngine:
         with open(self.config_file, 'r', encoding='utf-8') as f:
             self.config = json.load(f)
 
-    def load_or_init_state(self):
+    def refresh_state(self):
+        # 1. Try Upstash Redis if configured
+        if self.redis_url and self.redis_token:
+            redis_state = self._load_from_redis()
+            if redis_state:
+                self.state = redis_state
+                return True
+
+        # 2. Try state file (local or /tmp)
         if os.path.exists(self.state_file):
             try:
                 with open(self.state_file, 'r', encoding='utf-8') as f:
                     self.state = json.load(f)
-                return
+                return True
             except Exception as e:
-                print(f"Error loading state.json: {e}, reinitializing...")
-        self.reset_game()
+                print(f"Error loading state file: {e}")
+        return False
+
+    def load_or_init_state(self):
+        if not self.refresh_state():
+            self.reset_game()
 
     def save_state(self):
-        with open(self.state_file, 'w', encoding='utf-8') as f:
-            json.dump(self.state, f, ensure_ascii=False, indent=2)
+        try:
+            with open(self.state_file, 'w', encoding='utf-8') as f:
+                json.dump(self.state, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"Warning: could not write local state file ({e})")
+
+        # Sync to Upstash Redis if available
+        self._save_to_redis()
 
     def reset_game(self, preserve_participants=False, total_stages=None):
         if total_stages is None:

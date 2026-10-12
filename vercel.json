@@ -1,0 +1,32 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/admin",
+      "destination": "/danarakca/static/admin-login.html"
+    },
+    {
+      "source": "/admin/",
+      "destination": "/danarakca/static/admin-login.html"
+    },
+    {
+      "source": "/facilitator",
+      "destination": "/danarakca/static/facilitator.html"
+    },
+    {
+      "source": "/player",
+      "destination": "/danarakca/static/player.html"
+    },
+    {
+      "source": "/",
+      "destination": "/danarakca/static/index.html"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/danarakca/static/$1"
+    }
+  ]
+}

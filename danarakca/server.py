@@ -35,7 +35,19 @@ def check_admin_token(headers):
 
 class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=STATIC_DIR, **kwargs)
+        try:
+            super().__init__(*args, directory=STATIC_DIR, **kwargs)
+        except TypeError:
+            super().__init__(*args, **kwargs)
+
+    def get_effective_path(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        if path in ('/api', '/api/', '/api/index.py'):
+            fwd = self.headers.get('x-forwarded-uri') or self.headers.get('x-real-path')
+            if fwd:
+                return urllib.parse.urlparse(fwd)
+        return parsed
 
     def end_headers(self):
         # Enable CORS for convenience
@@ -80,15 +92,18 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
         return json.loads(raw_body)
 
     def do_HEAD(self):
-        parsed = urllib.parse.urlparse(self.path)
+        parsed = self.get_effective_path()
         if parsed.path in ('/admin', '/admin/'):
             self.path = '/admin-login.html'
         return super().do_HEAD()
 
     def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
+        parsed = self.get_effective_path()
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
+
+        if path.startswith('/api/'):
+            engine.refresh_state()
 
         # API Routes
         if path == '/api/state':
@@ -159,8 +174,11 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
-        parsed = urllib.parse.urlparse(self.path)
+        parsed = self.get_effective_path()
         path = parsed.path
+
+        if path.startswith('/api/'):
+            engine.refresh_state()
 
         try:
             body = self.parse_json_body()
