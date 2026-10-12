@@ -1,5 +1,5 @@
 name = "game-danarakca"
-pages_build_output_dir = "web_v2/static"
+pages_build_output_dir = "danarakca/static"
 compatibility_date = "2024-01-01"
 
 # Opsi KV Namespace jika ingin persistensi permanen di Cloudflare:

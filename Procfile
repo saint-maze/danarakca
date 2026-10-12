@@ -1,1 +1,1 @@
-web: python3 web_v2/server.py
+web: python3 danarakca/server.py

@@ -3,4 +3,4 @@ WORKDIR /app
 COPY . .
 ENV PORT=8080
 EXPOSE 8080
-CMD ["python3", "web_v2/server.py"]
+CMD ["python3", "danarakca/server.py"]

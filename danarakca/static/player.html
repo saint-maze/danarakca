@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Danarakca - Peserta</title>
+  <link rel="icon" type="image/png" href="img/thunderbolt.png">
+  <link rel="apple-touch-icon" href="img/thunderbolt.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=2.2">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            obsidian: '#101010',
+            carbon: '#080808',
+            chalk: '#f3f3f3',
+            smoke: '#9c9c9c',
+            ash: '#c1c1c1',
+            graphite: '#212121',
+            iron: '#474747',
+            pulse: '#98ff38',
+            loss: '#ff7a6b'
+          },
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace']
+          },
+          borderRadius: {
+            tag: '4px',
+            card: '8px'
+          }
+        }
+      }
+    };
+  </script>
+</head>
+
+<body class="bg-obsidian text-chalk min-h-screen flex flex-col justify-between pb-8">
+
+  <!-- Mobile & Desktop Header -->
+  <header class="hairline-b bg-obsidian sticky top-0 z-40 px-4 sm:px-8 py-3.5">
+    <div class="w-full max-w-6xl mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <img src="img/logo-danarakca.png" alt="Logo Danarakca"
+          class="h-10 sm:h-11 w-auto object-contain shrink-0 drop-shadow-sm">
+        <a href="index.html"
+          class="text-heading-xs tracking-tight text-chalk hover:text-ash transition-colors font-medium">
+          Danarakca
+        </a>
+        <span class="text-caption text-smoke text-[11px] font-mono" id="headerRoundInfo">Peserta</span>
+      </div>
+      <div id="userHeaderBadge" class="hidden items-center gap-2">
+        <span class="badge font-mono truncate max-w-[150px]" id="badgeUserName">
+          Tim
+        </span>
+        <button onclick="logout()" class="btn-ghost py-1 px-2.5 text-caption text-smoke hover:text-chalk"
+          title="Ganti Akun">
+          Ganti Akun
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container (Responsive Full Width on Laptop, Centered on Mobile) -->
+  <main class="flex-grow w-full max-w-6xl mx-auto px-4 sm:px-8 py-6">
+
+    <!-- SCREEN 1: REGISTRASI PESERTA -->
+    <section id="loginScreen" class="py-10 max-w-md mx-auto">
+      <div class="panel-deep p-6 sm:p-8">
+
+        <div class="mb-6">
+          <div class="meta mb-1">Registrasi Peserta / Tim</div>
+          <h2 class="text-heading-sm text-chalk mb-2">Masuk Danarakca</h2>
+          <p class="text-caption text-smoke leading-relaxed">
+            Masukkan nama peserta atau nama tim Anda untuk memulai simulasi portofolio.
+          </p>
+        </div>
+
+        <form id="formLogin" onsubmit="handleLogin(event)" class="space-y-4">
+          <div>
+            <label class="block meta mb-1.5">
+              Nama Peserta / Tim <span class="text-loss">*</span>
+            </label>
+            <input type="text" id="inputName" required placeholder="Contoh: Tim Rajawali atau Sena" class="field" autocomplete="name" autofocus>
+          </div>
+
+          <div class="pt-2">
+            <button type="submit" class="btn-pill w-full">
+              Masuk ↗
+            </button>
+          </div>
+        </form>
+
+      </div>
+    </section>
+
+    <!-- SCREEN 2: DASHBOARD PESERTA (Responsive Dual-Pane on Laptop) -->
+    <section id="dashboardScreen" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+      <!-- LEFT COLUMN: Status Portofolio, Kartu Berita & Banner Status (5 cols on laptop) -->
+      <div class="lg:col-span-5 space-y-4">
+
+        <!-- 1. Saldo & Status Card -->
+        <div class="panel p-5 bg-carbon">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-caption text-ash" id="displayTeamName">Nama Tim</span>
+            <span class="badge" id="displayRank">
+              Peringkat #--
+            </span>
+          </div>
+
+          <!-- Total Asset Value -->
+          <div class="text-heading sm:text-heading-lg text-chalk tracking-tight mb-2 tabular font-mono"
+            id="displayTotalAsset">
+            Rp 100.000.000
+          </div>
+
+          <!-- Return & Drawdown (High-Contrast Financial Risk Indicators) -->
+          <div class="flex items-center justify-between text-caption hairline-t pt-3">
+            <div class="flex items-center gap-1.5">
+              <span class="text-smoke text-[11px] uppercase tracking-wider font-mono">Return:</span>
+              <span class="font-mono tabular" id="displayReturn">+0,0%</span>
+            </div>
+            <div class="text-graphite">|</div>
+            <div class="flex items-center gap-1.5">
+              <span class="text-smoke text-[11px] uppercase tracking-wider font-mono">Max DD:</span>
+              <span class="font-mono tabular" id="displayMaxDd">0,0%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. CURRENT ROUND CARD PREVIEW (Ditaruh di atas agar langsung terlihat oleh pemain) -->
+        <div id="playerCardPreview" class="panel p-4 bg-carbon hidden card-in">
+          <div class="flex items-center justify-between mb-2">
+            <span class="badge" id="previewRound">Putaran 1</span>
+            <span class="meta text-[11px]" id="previewCategory">Kategori</span>
+          </div>
+          <h4 class="text-heading-xs text-chalk mb-1.5 tracking-tight" id="previewTitle">Judul</h4>
+          <p class="text-caption text-smoke leading-relaxed" id="previewNarration">Narasi...</p>
+        </div>
+
+        <!-- 3. STAGE INPUT NOTIFICATION BANNER (Diletakkan di bawah kartu berita) -->
+        <div id="allocationBanner"
+          class="p-3.5 rounded-card hairline text-caption leading-relaxed flex items-center justify-between gap-3 bg-carbon">
+          <!-- Injected via JS -->
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMN: Form Alokasi & Sliders (7 cols on laptop) -->
+      <div class="lg:col-span-7">
+
+        <!-- 4. ALLOCATION FORM -->
+        <div class="panel p-4 sm:p-6 bg-carbon rounded-card hairline">
+
+          <!-- Allocation Header & Total 100% Badge (Spacious on mobile) -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-4 hairline-b">
+            <div>
+              <div class="meta text-smoke mb-1">Strategi Portofolio</div>
+              <h3 class="text-heading-xs text-chalk tracking-tight">
+                Alokasi Portofolio <span id="labelCurrentStage" class="text-ash font-mono font-normal">Tahap 1</span>
+              </h3>
+              <p class="text-caption text-smoke mt-0.5">Atur bobot 5 kelas aset. Total alokasi wajib tepat 100%.</p>
+            </div>
+
+            <!-- High-Contrast Sum Meter Badge (Spacious, prominent, not mepet) -->
+            <div class="flex items-center justify-between sm:justify-end gap-3 pt-1 sm:pt-0">
+              <span class="text-caption text-smoke sm:hidden font-mono text-[11px] uppercase tracking-wider">Total
+                Terpilih:</span>
+              <div id="sumBadge"
+                class="px-3.5 py-1.5 rounded-button font-mono text-sm font-semibold tabular border bg-obsidian text-white border-chalk shadow-sm">
+                Total: 100%
+              </div>
+            </div>
+          </div>
+
+          <!-- Clean Segmented Presets Group -->
+          <div class="mb-5">
+            <div class="meta text-[11px] mb-2 text-smoke">Preset Strategi Cepat:</div>
+            <div
+              class="grid grid-cols-3 rounded-card hairline overflow-hidden divide-x divide-graphite bg-obsidian text-caption font-mono"
+              id="presetButtonsGroup">
+              <button type="button" onclick="applyPreset('rata')"
+                class="py-2.5 px-1 sm:px-2 text-center text-smoke hover:text-chalk hover:bg-carbon transition-colors active:bg-graphite text-xs cursor-pointer">
+                Rata (20%)
+              </button>
+              <button type="button" onclick="applyPreset('konservatif')"
+                class="py-2.5 px-1 sm:px-2 text-center text-smoke hover:text-chalk hover:bg-carbon transition-colors active:bg-graphite text-xs cursor-pointer">
+                Konservatif
+              </button>
+              <button type="button" onclick="applyPreset('agresif')"
+                class="py-2.5 px-1 sm:px-2 text-center text-smoke hover:text-chalk hover:bg-carbon transition-colors active:bg-graphite text-xs cursor-pointer">
+                Agresif
+              </button>
+            </div>
+          </div>
+
+          <form id="formAllocation" onsubmit="handleAllocationSubmit(event)" class="space-y-3.5">
+
+            <!-- 1. Sukuk -->
+            <div class="panel p-3.5 sm:p-4 bg-obsidian rounded-card hairline">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-medium text-chalk">Sukuk / SBN</span>
+                <span class="font-mono text-sm font-semibold text-white tabular" id="valSukuk">20%</span>
+              </div>
+              <input type="range" id="rangeSukuk" min="0" max="100" step="5" value="20"
+                oninput="onSliderChange('sukuk', this.value)" class="w-full py-2 my-0.5 cursor-pointer">
+              <div class="text-[11px] text-smoke mt-1 leading-snug">Kupon 7%/thn, aman & dijamin negara.</div>
+            </div>
+
+            <!-- 2. Saham -->
+            <div class="panel p-3.5 sm:p-4 bg-obsidian rounded-card hairline">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-medium text-chalk">Saham</span>
+                <span class="font-mono text-sm font-semibold text-white tabular" id="valSaham">20%</span>
+              </div>
+              <input type="range" id="rangeSaham" min="0" max="100" step="5" value="20"
+                oninput="onSliderChange('saham', this.value)" class="w-full py-2 my-0.5 cursor-pointer">
+              <div class="text-[11px] text-smoke mt-1 leading-snug">Potensi imbal hasil tinggi, volatilitas tinggi.
+              </div>
+            </div>
+
+            <!-- 3. RDPU -->
+            <div class="panel p-3.5 sm:p-4 bg-obsidian rounded-card hairline">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-medium text-chalk">RD Pasar Uang</span>
+                <span class="font-mono text-sm font-semibold text-white tabular" id="valRdpu">20%</span>
+              </div>
+              <input type="range" id="rangeRdpu" min="0" max="100" step="5" value="20"
+                oninput="onSliderChange('rdpu', this.value)" class="w-full py-2 my-0.5 cursor-pointer">
+              <div class="text-[11px] text-smoke mt-1 leading-snug">Stabil ±4,5%/thn, likuiditas instan.</div>
+            </div>
+
+            <!-- 4. Emas -->
+            <div class="panel p-3.5 sm:p-4 bg-obsidian rounded-card hairline">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-medium text-chalk">Emas</span>
+                <span class="font-mono text-sm font-semibold text-white tabular" id="valEmas">20%</span>
+              </div>
+              <input type="range" id="rangeEmas" min="0" max="100" step="5" value="20"
+                oninput="onSliderChange('emas', this.value)" class="w-full py-2 my-0.5 cursor-pointer">
+              <div class="text-[11px] text-smoke mt-1 leading-snug">Lindung nilai (hedging) krisis & geopolitik.</div>
+            </div>
+
+            <!-- 5. Campuran -->
+            <div class="panel p-3.5 sm:p-4 bg-obsidian rounded-card hairline">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-medium text-chalk">RD Campuran</span>
+                <span class="font-mono text-sm font-semibold text-white tabular" id="valCampuran">20%</span>
+              </div>
+              <input type="range" id="rangeCampuran" min="0" max="100" step="5" value="20"
+                oninput="onSliderChange('campuran', this.value)" class="w-full py-2 my-0.5 cursor-pointer">
+              <div class="text-[11px] text-smoke mt-1 leading-snug">Kombinasi saham & kupon berimbang.</div>
+            </div>
+
+            <div class="pt-3 pb-8 sm:pb-2">
+              <button type="submit" id="btnSubmitAllocation"
+                class="btn-pill w-full h-12 text-sm font-mono uppercase tracking-wider shadow-lg cursor-pointer">
+                Simpan Alokasi Tahap Ini ↗
+              </button>
+            </div>
+          </form>
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Modal Konfirmasi Logout Peserta (In-App Modal Ganti confirm() Basic) -->
+  <div id="modalConfirmPlayer" class="fixed inset-0 bg-obsidian/90 flex items-center justify-center p-4 z-50 hidden">
+    <div class="panel-deep max-w-sm w-full p-6 hairline bg-carbon rounded-card relative card-in">
+      <div class="meta mb-1 text-smoke">Sesi Peserta</div>
+      <p class="text-caption text-smoke leading-relaxed mb-6">Keluar dari akun saat ini untuk masuk dengan nama peserta atau tim lain?</p>
+      <div class="flex items-center justify-end gap-3 pt-3 hairline-t">
+        <button type="button" onclick="closePlayerModal()" class="btn-ghost text-caption py-2 px-4">
+          Batal
+        </button>
+        <button type="button" onclick="confirmLogoutAction()" class="btn-pill text-caption py-2 px-5">
+          Ya, Keluar ↗
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container (Ganti alert() Basic) -->
+  <div id="toastContainerPlayer" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <script src="player.js?v=2.2"></script>
+</body>
+
+</html>
