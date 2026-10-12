@@ -48,11 +48,18 @@
     };
   </script>
 </head>
-<body class="bg-obsidian text-chalk min-h-screen flex flex-col justify-between">
+<body class="bg-obsidian text-chalk min-h-screen flex flex-col justify-between relative overflow-x-hidden">
+
+  <!-- Spline 3D Scene Background Canvas -->
+  <div class="fixed inset-0 w-full h-full z-0 overflow-hidden pointer-events-auto">
+    <canvas id="canvas3d" class="w-full h-full block"></canvas>
+    <!-- Subtle atmospheric vignette to preserve editorial legibility -->
+    <div class="absolute inset-0 bg-gradient-to-b from-obsidian/75 via-transparent to-obsidian/85 pointer-events-none"></div>
+  </div>
 
   <!-- Header -->
-  <header class="hairline-b bg-obsidian sticky top-0 z-40">
-    <div class="w-full max-w-[1600px] mx-auto px-6 sm:px-10 lg:px-16 h-18 py-3 flex items-center justify-between gap-4">
+  <header class="hairline-b bg-obsidian/90 backdrop-blur-md sticky top-0 z-40">
+    <div class="w-full max-w-[1600px] mx-auto px-4 sm:px-10 lg:px-16 h-18 py-3 flex items-center justify-between gap-4">
       
       <!-- Logo Danarakca & Brand Identity -->
       <a href="index.html" class="flex items-center gap-3.5 group text-decoration-none">
@@ -82,15 +89,13 @@
   </header>
 
   <!-- Hero Section (Full Width Responsive) -->
-  <main class="flex-grow flex flex-col justify-center relative overflow-hidden py-10 lg:py-16">
-    <div class="absolute inset-0 dot-field pointer-events-none opacity-40"></div>
-
+  <main class="flex-grow flex flex-col justify-center relative z-10 py-8 sm:py-12 lg:py-16 pointer-events-none">
     <div class="w-full max-w-[1600px] mx-auto px-4 sm:px-10 lg:px-16 relative z-10">
       
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-16 items-center">
         
         <!-- Left: Headline & Editorial Context (7 Columns on Laptop) -->
-        <div class="lg:col-span-7">
+        <div class="lg:col-span-7 pointer-events-auto">
           <div class="meta mb-2.5 text-smoke">Simulasi Investasi Interaktif</div>
           <h1 class="text-heading sm:text-heading-lg lg:text-display text-chalk mb-4 sm:mb-6 leading-none tracking-tight">
             Simulasi alokasi aset berbasis skenario pasar makro.
@@ -121,8 +126,8 @@
         </div>
 
         <!-- Right: Primary Action Card (5 Columns on Laptop) -->
-        <div class="lg:col-span-5">
-          <div class="panel-deep p-6 sm:p-8 lg:p-10 hairline bg-carbon rounded-card">
+        <div class="lg:col-span-5 pointer-events-auto">
+          <div class="panel-deep p-6 sm:p-8 lg:p-10 hairline bg-carbon/85 backdrop-blur-md rounded-card shadow-2xl">
             <div class="w-8 h-8 rounded-full border border-graphite flex items-center justify-center text-caption text-ash mb-4 sm:mb-6 font-mono">
               01
             </div>
@@ -148,7 +153,7 @@
   </main>
 
   <!-- Footer -->
-  <footer class="hairline-t bg-obsidian py-6 pb-14 sm:pb-6 text-caption text-smoke">
+  <footer class="hairline-t bg-obsidian/90 backdrop-blur-md py-6 pb-14 sm:pb-6 text-caption text-smoke relative z-10 pointer-events-auto">
     <div class="w-full max-w-[1600px] mx-auto px-4 sm:px-10 lg:px-16 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
       <div class="text-xs sm:text-caption leading-relaxed">
         Danarakca · Direktorat Jenderal Pengelolaan Pembiayaan dan Risiko — Kementerian Keuangan RI
@@ -156,6 +161,18 @@
       <div class="font-mono text-[11px] text-iron shrink-0">PORTAL v2.0</div>
     </div>
   </footer>
+
+  <!-- Spline 3D Interactive Scene Runtime -->
+  <script type="module">
+    import { Application } from 'https://unpkg.com/@splinetool/runtime/build/runtime.js';
+    const canvas = document.getElementById('canvas3d');
+    if (canvas) {
+      const app = new Application(canvas);
+      app.load('https://prod.spline.design/29i1VHeST2QOSvQI/scene.splinecode').catch(err => {
+        console.warn('Spline 3D background load error:', err);
+      });
+    }
+  </script>
 
 </body>
 </html>

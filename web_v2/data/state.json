@@ -1,45 +1,12 @@
 {
-  "status": "ROUND_IN_PROGRESS",
-  "current_round": 1,
+  "status": "WAITING_STAGE_1",
+  "current_round": 0,
   "current_stage": 1,
-  "stage_input_open": false,
+  "stage_input_open": true,
   "total_rounds": 30,
   "rounds_per_stage": 10,
   "total_stages": 3,
-  "drawn_cards": [
-    {
-      "round": 1,
-      "stage": 1,
-      "card_id": "K073",
-      "timestamp": "2026-10-12 03:10:28",
-      "card": {
-        "id": "K073",
-        "category": "Fiskal & SBN/Sukuk",
-        "title": "Lelang SBSN Oversubscribed",
-        "narration": "Lelang sukuk negara kelebihan permintaan beberapa kali lipat.",
-        "explanation": "Permintaan kuat menandakan kepercayaan investor pada ekonomi Indonesia, sentimen positif juga ke pasar saham. Pemerintah bisa membiayai APBN dengan biaya lebih rendah.",
-        "return_sukuk": 0.0,
-        "return_saham": 0.02,
-        "return_rdpu": 0.0,
-        "return_emas": 0.0,
-        "return_campuran": 0.01
-      },
-      "returns": {
-        "sukuk": 0.0175,
-        "saham": 0.02,
-        "rdpu": 0.011,
-        "emas": 0.002,
-        "campuran": 0.0174
-      },
-      "stage_factors": {
-        "sukuk": 1.0175,
-        "saham": 1.02,
-        "rdpu": 1.011,
-        "emas": 1.002,
-        "campuran": 1.0174
-      }
-    }
-  ],
+  "drawn_cards": [],
   "available_cards": [
     "K001",
     "K002",
@@ -113,6 +80,7 @@
     "K070",
     "K071",
     "K072",
+    "K073",
     "K074",
     "K075",
     "K076",
@@ -141,68 +109,30 @@
     "K099",
     "K100"
   ],
-  "participants": {
-    "PO1": {
-      "code": "PO1",
-      "name": "ghhh",
-      "allocations": {
-        "1": {
-          "sukuk": 20.0,
-          "saham": 20.0,
-          "rdpu": 20.0,
-          "emas": 20.0,
-          "campuran": 20.0
-        }
-      },
-      "current_value": 101358000.00000001,
-      "prev_value": 100000000,
-      "current_rank": 1,
-      "prev_rank": 1,
-      "max_drawdown": 0.0,
-      "history": [
-        {
-          "round": 0,
-          "value": 100000000,
-          "drawdown": 0.0,
-          "rank": 1
-        },
-        {
-          "round": 1,
-          "value": 101358000.00000001,
-          "drawdown": 0.0,
-          "rank": 1
-        }
-      ]
-    }
-  },
+  "participants": {},
   "asset_indexes": {
     "sukuk": [
-      100.0,
-      101.75
+      100.0
     ],
     "saham": [
-      100.0,
-      102.0
+      100.0
     ],
     "rdpu": [
-      100.0,
-      101.1
+      100.0
     ],
     "emas": [
-      100.0,
-      100.2
+      100.0
     ],
     "campuran": [
-      100.0,
-      101.74
+      100.0
     ]
   },
   "stage_factors": {
-    "sukuk": 1.0175,
-    "saham": 1.02,
-    "rdpu": 1.011,
-    "emas": 1.002,
-    "campuran": 1.0174
+    "sukuk": 1.0,
+    "saham": 1.0,
+    "rdpu": 1.0,
+    "emas": 1.0,
+    "campuran": 1.0
   },
-  "message": "Putaran 1: Kartu Lelang SBSN Oversubscribed keluar!"
+  "message": "Game dimulai. Silakan peserta mendaftar dan mengisi alokasi Tahap 1."
 }
