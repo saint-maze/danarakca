@@ -214,13 +214,7 @@ function closeConfirmModal(result = false, extraData = false) {
 let actionInFlight = false;
 
 function buildClientSync() {
-  if (!gameState) {
-    try {
-      const saved = localStorage.getItem('danarakca_facilitator_sync');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return null;
-  }
+  if (!gameState) return null;
   return {
     session_id: gameState.session_id || 1,
     state_version: gameState.state_version || 1,
@@ -237,27 +231,6 @@ function buildClientSync() {
   };
 }
 
-function saveSyncSnapshot(stateObj) {
-  if (!stateObj) return;
-  try {
-    const snap = {
-      session_id: stateObj.session_id || 1,
-      state_version: stateObj.state_version || 1,
-      preserve_participants_on_reset: !!stateObj.preserve_participants_on_reset,
-      status: stateObj.status,
-      current_round: stateObj.current_round,
-      current_stage: stateObj.current_stage,
-      stage_input_open: stateObj.stage_input_open,
-      total_stages: stateObj.total_stages,
-      rounds_per_stage: stateObj.rounds_per_stage,
-      drawn_card_ids: stateObj.drawn_card_ids || [],
-      participants_sync: stateObj.participants_sync || {},
-      message: stateObj.message || ''
-    };
-    localStorage.setItem('danarakca_facilitator_sync', JSON.stringify(snap));
-  } catch (e) {}
-}
-
 function applyIncomingState(newState, force = false) {
   if (!newState) return;
   if (!force && gameState) {
@@ -270,7 +243,6 @@ function applyIncomingState(newState, force = false) {
       return;
     }
     if (newSess === curSess && newVer < curVer) {
-      // Merge any newly registered participants from other containers without reverting round/stage
       if (newState.participants_sync && gameState.participants_sync) {
         Object.assign(gameState.participants_sync, newState.participants_sync);
       }
@@ -278,16 +250,19 @@ function applyIncomingState(newState, force = false) {
     }
   }
   gameState = newState;
-  saveSyncSnapshot(gameState);
   renderUI();
 }
 
 async function fetchState() {
   if (actionInFlight) return;
   try {
+    localStorage.removeItem('danarakca_facilitator_sync');
     const res = await fetch('/api/state/sync', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Admin-Token': getAdminToken()
+      },
       body: JSON.stringify({ client_sync: buildClientSync() })
     });
     const json = await res.json();
@@ -554,9 +529,16 @@ function updateCharts() {
   chartAssetIndexes.update('none');
 }
 
+let drawCooldown = false;
+
 async function drawCard() {
   const btn = document.getElementById('btnDrawCard');
-  if (btn) btn.disabled = true;
+  if (drawCooldown || actionInFlight) return;
+  if (btn) {
+    btn.blur();
+    btn.disabled = true;
+  }
+  drawCooldown = true;
   actionInFlight = true;
 
   try {
@@ -586,9 +568,12 @@ async function drawCard() {
     showToast('Koneksi server gagal: ' + err.message, 'error');
   } finally {
     actionInFlight = false;
-    if (btn && (!gameState || gameState.current_round < gameState.total_rounds)) {
-      btn.disabled = false;
-    }
+    setTimeout(() => {
+      drawCooldown = false;
+      if (btn && (!gameState || gameState.current_round < gameState.total_rounds)) {
+        btn.disabled = false;
+      }
+    }, 1200);
   }
 }
 

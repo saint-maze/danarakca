@@ -188,11 +188,15 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
         try:
             body = self.parse_json_body()
 
+            is_admin = check_admin_token(self.headers)
+            client_sync = body.get('client_sync') if is_admin else None
+            participant_sync = body.get('participant_sync')
+
             if path.startswith('/api/') and path != '/api/facilitator/reset':
-                if body.get('client_sync') or body.get('participant_sync'):
+                if client_sync or participant_sync:
                     engine.sync_state(
-                        client_sync=body.get('client_sync'),
-                        participant_sync=body.get('participant_sync')
+                        client_sync=client_sync,
+                        participant_sync=participant_sync
                     )
 
             # Admin Authentication Route
@@ -208,6 +212,8 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
                 return self.send_error_json('ID atau Password Fasilitator salah!', 401)
 
             elif path == '/api/state/sync':
+                if is_admin and body.get('client_sync'):
+                    engine.sync_state(client_sync=body.get('client_sync'))
                 return self.send_json({'success': True, 'data': engine.get_public_state()})
 
             elif path == '/api/player/sync':

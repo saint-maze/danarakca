@@ -37,24 +37,6 @@ function persistSavedAllocations() {
   } catch (e) {}
 }
 
-function buildPlayerClientSync() {
-  if (!gameState) return null;
-  return {
-    session_id: gameState.session_id || 1,
-    state_version: gameState.state_version || 1,
-    preserve_participants_on_reset: !!gameState.preserve_participants_on_reset,
-    status: gameState.status,
-    current_round: gameState.current_round,
-    current_stage: gameState.current_stage,
-    stage_input_open: gameState.stage_input_open,
-    total_stages: gameState.total_stages,
-    rounds_per_stage: gameState.rounds_per_stage,
-    drawn_card_ids: gameState.drawn_card_ids || [],
-    participants_sync: gameState.participants_sync || {},
-    message: gameState.message || ''
-  };
-}
-
 function buildParticipantSync() {
   if (!currentUser) return null;
   const savedSess = parseInt(localStorage.getItem('danarakca_session_id') || '0', 10);
@@ -149,10 +131,7 @@ async function handleLogin(e) {
     const res = await fetch('/api/participant/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: name,
-        client_sync: buildPlayerClientSync()
-      })
+      body: JSON.stringify({ name: name })
     });
     const json = await res.json();
     if (json.success && json.data) {
@@ -255,8 +234,7 @@ async function fetchStateAndParticipant() {
       body: JSON.stringify({
         name: currentUser.name,
         code: currentUser.code,
-        participant_sync: buildParticipantSync(),
-        client_sync: buildPlayerClientSync()
+        participant_sync: buildParticipantSync()
       })
     });
     const json = await res.json();
@@ -492,8 +470,7 @@ async function handleAllocationSubmit(e) {
         name: currentUser.name,
         stage: gameState.current_stage,
         allocation: allocation,
-        participant_sync: buildParticipantSync(),
-        client_sync: buildPlayerClientSync()
+        participant_sync: buildParticipantSync()
       })
     });
     const json = await res.json();
