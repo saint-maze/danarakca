@@ -46,11 +46,50 @@ class GameEngine:
         self.load_config()
         self.load_or_init_state()
 
+    LIVE_CHANNEL = 'danarakca_live_' + hashlib.md5(b'danarakca_2026_pulse_channel').hexdigest()[:12]
+
     @staticmethod
     def make_participant_code(name):
         clean = (name or '').strip().lower()
         digest = hashlib.md5(clean.encode('utf-8')).hexdigest()[:6].upper()
         return f"T{digest}"
+
+    def _publish_live_event(self, event_type, data=None):
+        """Broadcasts real-time events to connected participant phones with ultra-low latency."""
+        payload = {
+            'event': event_type,
+            'session_id': self.state.get('session_id', 1) if hasattr(self, 'state') and isinstance(self.state, dict) else 1,
+            'current_round': self.state.get('current_round', 0) if hasattr(self, 'state') and isinstance(self.state, dict) else 0,
+            'current_stage': self.state.get('current_stage', 1) if hasattr(self, 'state') and isinstance(self.state, dict) else 1,
+            'stage_input_open': self.state.get('stage_input_open', False) if hasattr(self, 'state') and isinstance(self.state, dict) else False,
+            'status': self.state.get('status', 'WAITING_STAGE_1') if hasattr(self, 'state') and isinstance(self.state, dict) else 'WAITING_STAGE_1',
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        if data and isinstance(data, dict):
+            payload.update(data)
+
+        def _send():
+            import urllib.request
+            try:
+                body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+                req = urllib.request.Request(
+                    f"https://ntfy.sh/{self.LIVE_CHANNEL}",
+                    data=body,
+                    headers={
+                        'Title': f"Danarakca: {event_type}",
+                        'Priority': 'urgent',
+                        'User-Agent': 'Danarakca-Engine/1.0'
+                    },
+                    method='POST'
+                )
+                with urllib.request.urlopen(req, timeout=1.5):
+                    pass
+            except Exception:
+                pass
+
+        import threading
+        t = threading.Thread(target=_send, daemon=True)
+        t.start()
 
     def _load_from_redis(self):
         if not self.redis_url or not self.redis_token:
@@ -225,6 +264,14 @@ class GameEngine:
         }
         self._rebuild_simulation([])
         self.save_state(bump_version=False)
+        self._publish_live_event('GAME_RESET', {
+            'session_id': new_session_id,
+            'status': self.state['status'],
+            'current_round': 0,
+            'current_stage': 1,
+            'stage_input_open': True,
+            'message': self.state['message']
+        })
 
     def _rebuild_simulation(self, drawn_card_ids=None):
         """Deterministically rebuilds asset indexes, stage factors, drawn cards, and all participant histories."""
@@ -466,6 +513,12 @@ class GameEngine:
 
         self.state['message'] = f"Mode durasi diubah ke {total_stages} Tahap ({new_total_rounds} Putaran)."
         self.save_state()
+        self._publish_live_event('MODE_CHANGED', {
+            'total_stages': self.state['total_stages'],
+            'total_rounds': self.state['total_rounds'],
+            'status': self.state['status'],
+            'message': self.state['message']
+        })
         return {
             'total_stages': self.state['total_stages'],
             'total_rounds': self.state['total_rounds'],
@@ -575,6 +628,11 @@ class GameEngine:
         status_text = "dibuka" if self.state['stage_input_open'] else "ditutup"
         self.state['message'] = f"Input alokasi Tahap {self.state['current_stage']} telah {status_text}."
         self.save_state()
+        self._publish_live_event('STAGE_INPUT_TOGGLED', {
+            'stage_input_open': self.state['stage_input_open'],
+            'current_stage': self.state['current_stage'],
+            'message': self.state['message']
+        })
         return self.state['stage_input_open']
 
     def next_stage(self):
@@ -593,6 +651,11 @@ class GameEngine:
 
         self.state['message'] = f"Memasuki Tahap {self.state['current_stage']}. Sesi perubahan alokasi dibuka!"
         self.save_state()
+        self._publish_live_event('STAGE_ADVANCED', {
+            'current_stage': self.state['current_stage'],
+            'stage_input_open': self.state['stage_input_open'],
+            'message': self.state['message']
+        })
         return self.state['current_stage']
 
     def draw_card(self, card_id=None):
@@ -674,6 +737,15 @@ class GameEngine:
 
         self.state['message'] = f"Putaran {next_round}: Kartu {selected_card['title']} keluar!"
         self.save_state()
+        self._publish_live_event('CARD_DRAWN', {
+            'card_entry': card_log_entry,
+            'round': next_round,
+            'stage': expected_stage,
+            'card': selected_card,
+            'returns': round_returns,
+            'stage_factors': dict(self.state['stage_factors']),
+            'message': self.state['message']
+        })
         return card_log_entry
 
     def _recalculate_participants(self, current_round, current_stage):
@@ -817,6 +889,7 @@ class GameEngine:
         return {
             'session_id': self.state.get('session_id', 1),
             'state_version': self.state.get('state_version', 1),
+            'live_channel': self.LIVE_CHANNEL,
             'preserve_participants_on_reset': self.state.get('preserve_participants_on_reset', False),
             'status': self.state.get('status', 'WAITING_STAGE_1'),
             'current_round': self.state.get('current_round', 0),

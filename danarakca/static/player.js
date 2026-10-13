@@ -1,5 +1,10 @@
 // Player Front-End Logic — Hyperstudio Dark Editorial Edition
 
+const LIVE_CHANNEL = 'danarakca_live_fafc19b30c66';
+let liveEventSource = null;
+let lastProcessedCardRound = -1;
+let currentLiveChannel = null;
+
 let currentUser = null; // { code, name }
 let gameState = null;
 let participantData = null;
@@ -16,6 +21,108 @@ let userIsEditing = false;
 let submitInFlight = false;
 let lastLoadedStage = null;
 let savedAllocations = {};
+
+function renderInstantCardPreview(round, card) {
+  const preview = document.getElementById('playerCardPreview');
+  if (!preview || !card) return;
+
+  preview.classList.remove('hidden');
+
+  // Re-trigger animation
+  preview.classList.remove('card-in');
+  void preview.offsetWidth; // Force DOM reflow
+  preview.classList.add('card-in');
+
+  const roundEl = document.getElementById('previewRound');
+  const catEl = document.getElementById('previewCategory');
+  const titleEl = document.getElementById('previewTitle');
+  const narrEl = document.getElementById('previewNarration');
+
+  if (roundEl) roundEl.innerText = `Putaran ${round} · ${card.id || ''}`;
+  if (catEl) catEl.innerText = card.category || 'Berita Pasar';
+  if (titleEl) titleEl.innerText = card.title || '';
+  if (narrEl) narrEl.innerText = card.narration || '';
+}
+
+function handleRealtimeEvent(msg) {
+  if (!msg || !msg.event) return;
+
+  if (msg.event === 'CARD_DRAWN') {
+    const round = msg.round || msg.current_round;
+    const card = msg.card || (msg.card_entry && msg.card_entry.card);
+
+    if (round && round <= lastProcessedCardRound) return;
+    if (round) lastProcessedCardRound = round;
+
+    // 1. Instantly display drawn card with zero delay
+    if (card) {
+      renderInstantCardPreview(round, card);
+    }
+
+    // 2. Immediately update header badge
+    if (round) {
+      const total = gameState ? gameState.total_rounds : 30;
+      const stage = msg.stage || (gameState ? gameState.current_stage : 1);
+      const headerRound = document.getElementById('headerRoundInfo');
+      if (headerRound) headerRound.innerText = `Putaran ${round}/${total} · Tahap ${stage}`;
+    }
+
+    // 3. Immediately close allocation banner if card was drawn
+    if (gameState) {
+      gameState.stage_input_open = false;
+      gameState.current_round = round;
+      updateStageInputStatus();
+    }
+
+    // 4. Subtle haptic pulse
+    if (navigator.vibrate) {
+      try { navigator.vibrate([25, 40, 25]); } catch (e) {}
+    }
+
+    // 5. Instantly trigger background sync for updated portfolio balance and rank
+    fetchStateAndParticipant();
+  } else if (msg.event === 'STAGE_INPUT_TOGGLED') {
+    if (gameState) {
+      gameState.stage_input_open = Boolean(msg.stage_input_open);
+      if (msg.current_stage) gameState.current_stage = msg.current_stage;
+      updateStageInputStatus();
+    }
+    fetchStateAndParticipant();
+  } else if (msg.event === 'STAGE_ADVANCED') {
+    if (gameState) {
+      gameState.current_stage = msg.current_stage;
+      gameState.stage_input_open = true;
+      updateHeaderRoundInfo();
+      updateStageInputStatus();
+    }
+    fetchStateAndParticipant();
+  } else if (msg.event === 'GAME_RESET') {
+    lastProcessedCardRound = -1;
+    fetchStateAndParticipant();
+  }
+}
+
+function initRealtimeStream(channel) {
+  const targetChannel = channel || (gameState && gameState.live_channel) || LIVE_CHANNEL;
+  if (liveEventSource && currentLiveChannel === targetChannel) return;
+  if (liveEventSource) {
+    try { liveEventSource.close(); } catch (e) {}
+  }
+  currentLiveChannel = targetChannel;
+  try {
+    liveEventSource = new EventSource(`https://ntfy.sh/${targetChannel}/sse`);
+    liveEventSource.onmessage = (e) => {
+      try {
+        const raw = JSON.parse(e.data);
+        if (raw.event !== 'message' || !raw.message) return;
+        const msg = typeof raw.message === 'string' ? JSON.parse(raw.message) : raw.message;
+        handleRealtimeEvent(msg);
+      } catch (err) {}
+    };
+  } catch (err) {
+    console.warn('Realtime SSE unavailable:', err);
+  }
+}
 
 function loadSavedAllocations() {
   try {
@@ -204,6 +311,10 @@ function applyPlayerSyncResponse(newState, newParticipant, force = false) {
       gameState = newState;
     }
 
+    if (newState.live_channel && newState.live_channel !== currentLiveChannel) {
+      initRealtimeStream(newState.live_channel);
+    }
+
     updateHeaderRoundInfo();
     updateStageInputStatus();
     updateCardPreview();
@@ -378,10 +489,12 @@ function updateCardPreview() {
     preview.classList.add('hidden');
     return;
   }
-  const card = gameState.last_drawn_card.card;
+  const lastCard = gameState.last_drawn_card;
+  const card = lastCard.card;
+  lastProcessedCardRound = lastCard.round;
 
   preview.classList.remove('hidden');
-  document.getElementById('previewRound').innerText = `Putaran ${gameState.last_drawn_card.round} · ${card.id}`;
+  document.getElementById('previewRound').innerText = `Putaran ${lastCard.round} · ${card.id}`;
   document.getElementById('previewCategory').innerText = card.category;
   document.getElementById('previewTitle').innerText = card.title;
   document.getElementById('previewNarration').innerText = card.narration;
@@ -496,11 +609,12 @@ async function handleAllocationSubmit(e) {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  initRealtimeStream();
   initAuth();
-  // Battery & bandwidth friendly polling: pause when screen locked/tab hidden
+  // Active fallback polling: checks every 1200ms when screen active
   setInterval(() => {
     if (!document.hidden) fetchStateAndParticipant();
-  }, 2500);
+  }, 1200);
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) fetchStateAndParticipant();

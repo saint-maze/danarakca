@@ -1,5 +1,49 @@
 // Facilitator View Logic — Hyperstudio Dark Editorial Edition
 
+const LIVE_CHANNEL = 'danarakca_live_fafc19b30c66';
+let facilitatorEventSource = null;
+
+function broadcastLivePush(eventType, payload = {}) {
+  try {
+    const channel = (gameState && gameState.live_channel) || LIVE_CHANNEL;
+    const body = JSON.stringify({
+      event: eventType,
+      session_id: gameState ? gameState.session_id : 1,
+      current_round: gameState ? gameState.current_round : 0,
+      current_stage: gameState ? gameState.current_stage : 1,
+      stage_input_open: gameState ? gameState.stage_input_open : false,
+      timestamp: new Date().toISOString(),
+      ...payload
+    });
+    fetch(`https://ntfy.sh/${channel}`, {
+      method: 'POST',
+      body: body,
+      headers: {
+        'Title': `Danarakca: ${eventType}`,
+        'Priority': 'urgent'
+      },
+      mode: 'cors'
+    }).catch(() => {});
+  } catch (e) {}
+}
+
+function initFacilitatorRealtimeStream() {
+  const channel = (gameState && gameState.live_channel) || LIVE_CHANNEL;
+  if (facilitatorEventSource) {
+    try { facilitatorEventSource.close(); } catch (e) {}
+  }
+  try {
+    facilitatorEventSource = new EventSource(`https://ntfy.sh/${channel}/sse`);
+    facilitatorEventSource.onmessage = (e) => {
+      try {
+        const raw = JSON.parse(e.data);
+        if (raw.event !== 'message' || !raw.message) return;
+        fetchState();
+      } catch (err) {}
+    };
+  } catch (err) {}
+}
+
 let gameState = null;
 let currentTab = 'top10'; // 'top10' or 'tangguh'
 let chartTopPlayers = null;
@@ -553,6 +597,13 @@ async function drawCard() {
     const json = await res.json();
     if (json.success) {
       applyIncomingState(json.state, true);
+      broadcastLivePush('CARD_DRAWN', {
+        round: gameState.current_round,
+        stage: gameState.current_stage,
+        card: gameState.last_drawn_card ? gameState.last_drawn_card.card : null,
+        returns: gameState.last_drawn_card ? gameState.last_drawn_card.returns : null,
+        message: gameState.message
+      });
       if (gameState.last_drawn_card && gameState.last_drawn_card.card) {
         showToast(`Kartu Putaran ${gameState.current_round} terbuka: ${gameState.last_drawn_card.card.title}`, 'success');
       }
@@ -599,6 +650,11 @@ async function toggleStageInput() {
       } else {
         await fetchState();
       }
+      broadcastLivePush('STAGE_INPUT_TOGGLED', {
+        stage_input_open: gameState.stage_input_open,
+        current_stage: gameState.current_stage,
+        message: gameState.message
+      });
       showToast(`Status alokasi: ${gameState && gameState.stage_input_open ? 'Terbuka' : 'Ditutup'}`, 'info');
     } else if (res.status === 403) {
       showToast('Sesi berakhir', 'error');
@@ -634,6 +690,11 @@ async function advanceStage() {
     const json = await res.json();
     if (json.success) {
       applyIncomingState(json.state, true);
+      broadcastLivePush('STAGE_ADVANCED', {
+        current_stage: gameState.current_stage,
+        stage_input_open: gameState.stage_input_open,
+        message: gameState.message
+      });
       showToast(`Berhasil maju ke Tahap ${gameState.current_stage}`, 'success');
     } else {
       if (res.status === 403) {
@@ -700,6 +761,12 @@ async function setGameMode(stages) {
     const json = await res.json();
     if (json.success) {
       applyIncomingState(json.state, true);
+      broadcastLivePush('MODE_CHANGED', {
+        total_stages: gameState.total_stages,
+        total_rounds: gameState.total_rounds,
+        status: gameState.status,
+        message: gameState.message
+      });
       showToast(`Mode diubah: ${stages} Tahap (${targetRounds} Putaran)`, 'success');
     } else {
       if (res.status === 403) {
@@ -785,6 +852,14 @@ async function confirmReset() {
     const json = await res.json();
     if (json.success) {
       applyIncomingState(json.state, true);
+      broadcastLivePush('GAME_RESET', {
+        session_id: gameState ? gameState.session_id : 1,
+        status: gameState ? gameState.status : 'WAITING_STAGE_1',
+        current_round: 0,
+        current_stage: 1,
+        stage_input_open: true,
+        message: gameState ? gameState.message : ''
+      });
       showToast('Permainan berhasil direset ke Kuartal 0', 'success');
     } else {
       showToast('Gagal reset: ' + (json.error || 'Terjadi kesalahan'), 'error');
@@ -867,12 +942,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (!isAuthed) return;
 
   initCharts();
+  initFacilitatorRealtimeStream();
   await fetchState();
 
-  // Smart polling: pause when window minimized or screen off
+  // Active fallback polling: checks every 1500ms when screen active
   setInterval(() => {
     if (!document.hidden) fetchState();
-  }, 3000);
+  }, 1500);
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) fetchState();
