@@ -211,13 +211,88 @@ function closeConfirmModal(result = false, extraData = false) {
   }
 }
 
-async function fetchState() {
+let actionInFlight = false;
+
+function buildClientSync() {
+  if (!gameState) {
+    try {
+      const saved = localStorage.getItem('danarakca_facilitator_sync');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return null;
+  }
+  return {
+    session_id: gameState.session_id || 1,
+    state_version: gameState.state_version || 1,
+    preserve_participants_on_reset: !!gameState.preserve_participants_on_reset,
+    status: gameState.status,
+    current_round: gameState.current_round,
+    current_stage: gameState.current_stage,
+    stage_input_open: gameState.stage_input_open,
+    total_stages: gameState.total_stages,
+    rounds_per_stage: gameState.rounds_per_stage,
+    drawn_card_ids: gameState.drawn_card_ids || [],
+    participants_sync: gameState.participants_sync || {},
+    message: gameState.message || ''
+  };
+}
+
+function saveSyncSnapshot(stateObj) {
+  if (!stateObj) return;
   try {
-    const res = await fetch('/api/state');
+    const snap = {
+      session_id: stateObj.session_id || 1,
+      state_version: stateObj.state_version || 1,
+      preserve_participants_on_reset: !!stateObj.preserve_participants_on_reset,
+      status: stateObj.status,
+      current_round: stateObj.current_round,
+      current_stage: stateObj.current_stage,
+      stage_input_open: stateObj.stage_input_open,
+      total_stages: stateObj.total_stages,
+      rounds_per_stage: stateObj.rounds_per_stage,
+      drawn_card_ids: stateObj.drawn_card_ids || [],
+      participants_sync: stateObj.participants_sync || {},
+      message: stateObj.message || ''
+    };
+    localStorage.setItem('danarakca_facilitator_sync', JSON.stringify(snap));
+  } catch (e) {}
+}
+
+function applyIncomingState(newState, force = false) {
+  if (!newState) return;
+  if (!force && gameState) {
+    const curSess = gameState.session_id || 0;
+    const newSess = newState.session_id || 0;
+    const curVer = gameState.state_version || 0;
+    const newVer = newState.state_version || 0;
+
+    if (newSess < curSess) {
+      return;
+    }
+    if (newSess === curSess && newVer < curVer) {
+      // Merge any newly registered participants from other containers without reverting round/stage
+      if (newState.participants_sync && gameState.participants_sync) {
+        Object.assign(gameState.participants_sync, newState.participants_sync);
+      }
+      return;
+    }
+  }
+  gameState = newState;
+  saveSyncSnapshot(gameState);
+  renderUI();
+}
+
+async function fetchState() {
+  if (actionInFlight) return;
+  try {
+    const res = await fetch('/api/state/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_sync: buildClientSync() })
+    });
     const json = await res.json();
-    if (json.success) {
-      gameState = json.data;
-      renderUI();
+    if (json.success && !actionInFlight) {
+      applyIncomingState(json.data, false);
     }
   } catch (err) {
     console.error('Error fetching state:', err);
@@ -482,6 +557,7 @@ function updateCharts() {
 async function drawCard() {
   const btn = document.getElementById('btnDrawCard');
   if (btn) btn.disabled = true;
+  actionInFlight = true;
 
   try {
     const res = await fetch('/api/facilitator/draw-card', {
@@ -490,14 +566,13 @@ async function drawCard() {
         'Content-Type': 'application/json',
         'X-Admin-Token': getAdminToken()
       },
-      body: JSON.stringify({})
+      body: JSON.stringify({ client_sync: buildClientSync() })
     });
     const json = await res.json();
     if (json.success) {
-      gameState = json.state;
-      renderUI();
-      if (gameState.current_card) {
-        showToast(`Kartu Putaran ${gameState.current_round} terbuka: ${gameState.current_card.title}`, 'success');
+      applyIncomingState(json.state, true);
+      if (gameState.last_drawn_card && gameState.last_drawn_card.card) {
+        showToast(`Kartu Putaran ${gameState.current_round} terbuka: ${gameState.last_drawn_card.card.title}`, 'success');
       }
     } else {
       if (res.status === 403) {
@@ -510,11 +585,16 @@ async function drawCard() {
   } catch (err) {
     showToast('Koneksi server gagal: ' + err.message, 'error');
   } finally {
-    if (btn) btn.disabled = false;
+    actionInFlight = false;
+    if (btn && (!gameState || gameState.current_round < gameState.total_rounds)) {
+      btn.disabled = false;
+    }
   }
 }
 
 async function toggleStageInput() {
+  actionInFlight = true;
+  const targetOpen = gameState ? !gameState.stage_input_open : false;
   try {
     const res = await fetch('/api/facilitator/toggle-input', {
       method: 'POST',
@@ -522,18 +602,27 @@ async function toggleStageInput() {
         'Content-Type': 'application/json',
         'X-Admin-Token': getAdminToken()
       },
-      body: JSON.stringify({})
+      body: JSON.stringify({
+        open: targetOpen,
+        client_sync: buildClientSync()
+      })
     });
     const json = await res.json();
     if (json.success) {
-      await fetchState();
-      showToast(`Status alokasi: ${gameState && gameState.stage_input_allowed ? 'Terbuka' : 'Ditutup'}`, 'info');
+      if (json.state) {
+        applyIncomingState(json.state, true);
+      } else {
+        await fetchState();
+      }
+      showToast(`Status alokasi: ${gameState && gameState.stage_input_open ? 'Terbuka' : 'Ditutup'}`, 'info');
     } else if (res.status === 403) {
       showToast('Sesi berakhir', 'error');
       window.location.href = 'admin-login.html';
     }
   } catch (err) {
     showToast('Gagal mengubah status alokasi: ' + err.message, 'error');
+  } finally {
+    actionInFlight = false;
   }
 }
 
@@ -547,6 +636,7 @@ async function advanceStage() {
   });
   if (!res.confirmed) return;
 
+  actionInFlight = true;
   try {
     const res = await fetch('/api/facilitator/next-stage', {
       method: 'POST',
@@ -554,12 +644,11 @@ async function advanceStage() {
         'Content-Type': 'application/json',
         'X-Admin-Token': getAdminToken()
       },
-      body: JSON.stringify({})
+      body: JSON.stringify({ client_sync: buildClientSync() })
     });
     const json = await res.json();
     if (json.success) {
-      gameState = json.state;
-      renderUI();
+      applyIncomingState(json.state, true);
       showToast(`Berhasil maju ke Tahap ${gameState.current_stage}`, 'success');
     } else {
       if (res.status === 403) {
@@ -570,6 +659,8 @@ async function advanceStage() {
     }
   } catch (err) {
     showToast('Koneksi server gagal: ' + err.message, 'error');
+  } finally {
+    actionInFlight = false;
   }
 }
 
@@ -595,6 +686,9 @@ async function setGameMode(stages) {
     if (!ok) return;
   }
 
+  const syncPayload = buildClientSync();
+  actionInFlight = true;
+
   // Instant visual feedback on click
   updateModeButtonsUI(stages);
   if (gameState) {
@@ -613,12 +707,14 @@ async function setGameMode(stages) {
         'Content-Type': 'application/json',
         'X-Admin-Token': getAdminToken()
       },
-      body: JSON.stringify({ total_stages: stages })
+      body: JSON.stringify({
+        total_stages: stages,
+        client_sync: syncPayload
+      })
     });
     const json = await res.json();
     if (json.success) {
-      gameState = json.state;
-      renderUI();
+      applyIncomingState(json.state, true);
       showToast(`Mode diubah: ${stages} Tahap (${targetRounds} Putaran)`, 'success');
     } else {
       if (res.status === 403) {
@@ -629,6 +725,8 @@ async function setGameMode(stages) {
     }
   } catch (err) {
     showToast('Koneksi server gagal: ' + err.message, 'error');
+  } finally {
+    actionInFlight = false;
   }
 }
 
@@ -641,6 +739,7 @@ async function seedMockUsers(count = 200) {
   });
   if (!res.confirmed) return;
 
+  actionInFlight = true;
   try {
     const res = await fetch('/api/facilitator/seed-mock-users', {
       method: 'POST',
@@ -648,18 +747,22 @@ async function seedMockUsers(count = 200) {
         'Content-Type': 'application/json',
         'X-Admin-Token': getAdminToken()
       },
-      body: JSON.stringify({ count: count })
+      body: JSON.stringify({
+        count: count,
+        client_sync: buildClientSync()
+      })
     });
     const json = await res.json();
     if (json.success) {
-      gameState = json.state;
-      renderUI();
+      applyIncomingState(json.state, true);
       showToast(`Berhasil menambahkan ${count} bot peserta`, 'success');
     } else {
       showToast(json.error || 'Gagal membuat bot peserta', 'error');
     }
   } catch (err) {
     showToast('Gagal: ' + err.message, 'error');
+  } finally {
+    actionInFlight = false;
   }
 }
 
@@ -680,6 +783,7 @@ async function confirmReset() {
   if (!res.confirmed) return;
   const preserve = res.checkbox;
 
+  actionInFlight = true;
   try {
     const res = await fetch('/api/facilitator/reset', {
       method: 'POST',
@@ -689,19 +793,21 @@ async function confirmReset() {
       },
       body: JSON.stringify({
         preserve_participants: preserve,
-        total_stages: gameState ? gameState.total_stages : 3
+        total_stages: gameState ? gameState.total_stages : 3,
+        client_sync: buildClientSync()
       })
     });
     const json = await res.json();
     if (json.success) {
-      gameState = json.state;
-      renderUI();
+      applyIncomingState(json.state, true);
       showToast('Permainan berhasil direset ke Kuartal 0', 'success');
     } else {
       showToast('Gagal reset: ' + (json.error || 'Terjadi kesalahan'), 'error');
     }
   } catch (err) {
     showToast('Gagal: ' + err.message, 'error');
+  } finally {
+    actionInFlight = false;
   }
 }
 

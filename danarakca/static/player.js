@@ -13,6 +13,58 @@ let allocation = {
 };
 
 let userIsEditing = false;
+let submitInFlight = false;
+let lastLoadedStage = null;
+let savedAllocations = {};
+
+function loadSavedAllocations() {
+  try {
+    const raw = localStorage.getItem('danarakca_allocations');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        savedAllocations = parsed;
+      }
+    }
+  } catch (e) {
+    savedAllocations = {};
+  }
+}
+
+function persistSavedAllocations() {
+  try {
+    localStorage.setItem('danarakca_allocations', JSON.stringify(savedAllocations));
+  } catch (e) {}
+}
+
+function buildPlayerClientSync() {
+  if (!gameState) return null;
+  return {
+    session_id: gameState.session_id || 1,
+    state_version: gameState.state_version || 1,
+    preserve_participants_on_reset: !!gameState.preserve_participants_on_reset,
+    status: gameState.status,
+    current_round: gameState.current_round,
+    current_stage: gameState.current_stage,
+    stage_input_open: gameState.stage_input_open,
+    total_stages: gameState.total_stages,
+    rounds_per_stage: gameState.rounds_per_stage,
+    drawn_card_ids: gameState.drawn_card_ids || [],
+    participants_sync: gameState.participants_sync || {},
+    message: gameState.message || ''
+  };
+}
+
+function buildParticipantSync() {
+  if (!currentUser) return null;
+  const savedSess = parseInt(localStorage.getItem('danarakca_session_id') || '0', 10);
+  return {
+    code: currentUser.code,
+    name: currentUser.name,
+    session_id: gameState ? (gameState.session_id || savedSess) : savedSess,
+    allocations: savedAllocations
+  };
+}
 
 function formatRupiah(num) {
   if (num === null || num === undefined) return 'Rp 0';
@@ -49,6 +101,7 @@ function showToast(msg, type = 'info') {
 
 // 1. Auth & View State
 function initAuth() {
+  loadSavedAllocations();
   const savedName = localStorage.getItem('danarakca_name');
   const savedCode = localStorage.getItem('danarakca_code');
 
@@ -96,14 +149,25 @@ async function handleLogin(e) {
     const res = await fetch('/api/participant/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name })
+      body: JSON.stringify({
+        name: name,
+        client_sync: buildPlayerClientSync()
+      })
     });
     const json = await res.json();
     if (json.success && json.data) {
       const p = json.data;
       localStorage.setItem('danarakca_code', p.code);
       localStorage.setItem('danarakca_name', p.name);
+      if (json.state && json.state.session_id) {
+        localStorage.setItem('danarakca_session_id', String(json.state.session_id));
+      }
+      if (p.allocations && Object.keys(p.allocations).length > 0) {
+        savedAllocations = { ...p.allocations };
+        persistSavedAllocations();
+      }
       currentUser = { code: p.code, name: p.name };
+      lastLoadedStage = null;
       showDashboard();
     } else {
       showToast(json.error || 'Gagal mendaftar', 'error');
@@ -127,33 +191,80 @@ function confirmLogoutAction() {
   closePlayerModal();
   localStorage.removeItem('danarakca_code');
   localStorage.removeItem('danarakca_name');
+  localStorage.removeItem('danarakca_allocations');
+  localStorage.removeItem('danarakca_session_id');
   currentUser = null;
   participantData = null;
+  savedAllocations = {};
+  lastLoadedStage = null;
   showLogin();
 }
 
-// 2. Fetch Data
+function applyPlayerSyncResponse(newState, newParticipant, force = false) {
+  if (newState) {
+    const savedSess = parseInt(localStorage.getItem('danarakca_session_id') || '0', 10);
+    const curSess = gameState ? (gameState.session_id || savedSess) : savedSess;
+    const newSess = newState.session_id || 1;
+    const curVer = gameState ? (gameState.state_version || 0) : 0;
+    const newVer = newState.state_version || 0;
+
+    // Detect game reset by Facilitator
+    if (curSess > 0 && newSess > curSess) {
+      savedAllocations = {};
+      persistSavedAllocations();
+      localStorage.setItem('danarakca_session_id', String(newSess));
+      allocation = { sukuk: 20, saham: 20, rdpu: 20, emas: 20, campuran: 20 };
+      userIsEditing = false;
+      lastLoadedStage = null;
+      gameState = newState;
+    } else if (!force && gameState && newSess === curSess && newVer < curVer) {
+      // Ignore stale response from lagging container
+      return;
+    } else {
+      localStorage.setItem('danarakca_session_id', String(newSess));
+      gameState = newState;
+    }
+
+    updateHeaderRoundInfo();
+    updateStageInputStatus();
+    updateCardPreview();
+  }
+
+  if (newParticipant) {
+    if (newParticipant.code && currentUser && currentUser.code !== newParticipant.code) {
+      currentUser.code = newParticipant.code;
+      localStorage.setItem('danarakca_code', newParticipant.code);
+    }
+    if (newParticipant.allocations && typeof newParticipant.allocations === 'object') {
+      savedAllocations = { ...newParticipant.allocations, ...savedAllocations };
+      persistSavedAllocations();
+    }
+    participantData = newParticipant;
+    updateParticipantUI();
+  }
+}
+
+// 2. Fetch Data (Single Atomic Sync Request)
 async function fetchStateAndParticipant() {
-  if (!currentUser) return;
+  if (!currentUser || submitInFlight) return;
 
   try {
-    const resState = await fetch('/api/state');
-    const jsonState = await resState.json();
-    if (jsonState.success) {
-      gameState = jsonState.data;
-      updateHeaderRoundInfo();
-      updateStageInputStatus();
-      updateCardPreview();
-    }
-
-    const resPart = await fetch(`/api/participant/${currentUser.code}`);
-    const jsonPart = await resPart.json();
-    if (jsonPart.success) {
-      participantData = jsonPart.data;
-      updateParticipantUI();
+    const res = await fetch('/api/player/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: currentUser.name,
+        code: currentUser.code,
+        participant_sync: buildParticipantSync(),
+        client_sync: buildPlayerClientSync()
+      })
+    });
+    const json = await res.json();
+    if (json.success && json.data && !submitInFlight) {
+      applyPlayerSyncResponse(json.data.state, json.data.participant, false);
     }
   } catch (err) {
-    console.error('Error polling participant data:', err);
+    console.error('Error syncing participant data:', err);
   }
 }
 
@@ -188,31 +299,34 @@ function updateParticipantUI() {
   if (mdd === 0) {
     mddEl.className = 'font-mono text-smoke tabular';
   } else if (mdd <= 0.05) {
-    // 0.1% - 5.0%: Mild drawdown (yellow warning)
     mddEl.className = 'font-mono text-[#f5b721] tabular font-medium';
   } else if (mdd <= 0.10) {
-    // 5.1% - 10.0%: Moderate drawdown (orange alert near Investor Tangguh threshold)
     mddEl.className = 'font-mono text-[#fb923c] tabular font-bold';
   } else {
-    // > 10.0%: Severe drawdown (high-contrast red)
     mddEl.className = 'font-mono text-loss tabular font-bold';
   }
 
-  const totalPart = gameState.total_participants;
+  const totalPart = Math.max(1, gameState.total_participants || 1);
   document.getElementById('displayRank').innerText = `Peringkat #${participantData.current_rank} / ${totalPart}`;
 
-  const stageAlloc = participantData.allocations?.[String(gameState.current_stage)];
-  if (stageAlloc && !userIsEditing) {
-    allocation = { ...stageAlloc };
-    syncSliders();
-  } else if (!userIsEditing && participantData.allocations) {
-    for (let s = gameState.current_stage - 1; s >= 1; s--) {
-      if (participantData.allocations[String(s)]) {
-        allocation = { ...participantData.allocations[String(s)] };
-        syncSliders();
-        break;
+  // Only initialize/sync sliders once per stage transition so polling never moves sliders by itself
+  const currStage = gameState.current_stage;
+  if (lastLoadedStage !== currStage && !userIsEditing) {
+    const stageKey = String(currStage);
+    const stageAlloc = savedAllocations[stageKey] || participantData.allocations?.[stageKey];
+    if (stageAlloc) {
+      allocation = { ...stageAlloc };
+    } else {
+      for (let s = currStage - 1; s >= 1; s--) {
+        const prevAlloc = savedAllocations[String(s)] || participantData.allocations?.[String(s)];
+        if (prevAlloc) {
+          allocation = { ...prevAlloc };
+          break;
+        }
       }
     }
+    syncSliders();
+    lastLoadedStage = currStage;
   }
 }
 
@@ -252,7 +366,7 @@ function updateStageInputStatus() {
         </div>
       </div>
     `;
-    btnSubmit.disabled = false;
+    checkTotalSum();
     presetsGroup.classList.remove('opacity-40', 'pointer-events-none');
     enableSliders(true);
   } else {
@@ -280,10 +394,13 @@ function enableSliders(enable) {
 }
 
 function updateCardPreview() {
-  if (!gameState || !gameState.last_drawn_card) return;
   const preview = document.getElementById('playerCardPreview');
+  if (!preview) return;
+  if (!gameState || !gameState.last_drawn_card || !gameState.last_drawn_card.card) {
+    preview.classList.add('hidden');
+    return;
+  }
   const card = gameState.last_drawn_card.card;
-  if (!card) return;
 
   preview.classList.remove('hidden');
   document.getElementById('previewRound').innerText = `Putaran ${gameState.last_drawn_card.round} · ${card.id}`;
@@ -360,6 +477,11 @@ async function handleAllocationSubmit(e) {
   const btn = document.getElementById('btnSubmitAllocation');
   btn.disabled = true;
   btn.innerText = 'Menyimpan...';
+  submitInFlight = true;
+
+  const stageKey = String(gameState.current_stage);
+  savedAllocations[stageKey] = { ...allocation };
+  persistSavedAllocations();
 
   try {
     const res = await fetch('/api/participant/submit', {
@@ -367,8 +489,11 @@ async function handleAllocationSubmit(e) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         code: currentUser.code,
+        name: currentUser.name,
         stage: gameState.current_stage,
-        allocation: allocation
+        allocation: allocation,
+        participant_sync: buildParticipantSync(),
+        client_sync: buildPlayerClientSync()
       })
     });
     const json = await res.json();
@@ -378,15 +503,18 @@ async function handleAllocationSubmit(e) {
       }
       showToast(`Alokasi portofolio Tahap ${gameState.current_stage} berhasil disimpan!`, 'success');
       userIsEditing = false;
-      await fetchStateAndParticipant();
+      lastLoadedStage = gameState.current_stage;
+      applyPlayerSyncResponse(json.state, json.participant, true);
     } else {
       showToast(json.error || 'Gagal menyimpan alokasi', 'error');
     }
   } catch (err) {
     showToast('Koneksi server gagal: ' + err.message, 'error');
   } finally {
+    submitInFlight = false;
     btn.disabled = false;
     btn.innerText = 'Simpan Alokasi Tahap Ini ↗';
+    checkTotalSum();
   }
 }
 

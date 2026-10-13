@@ -1,11 +1,14 @@
 {
+  "session_id": 1,
+  "state_version": 1,
+  "preserve_participants_on_reset": false,
   "status": "WAITING_STAGE_1",
   "current_round": 0,
   "current_stage": 1,
   "stage_input_open": true,
-  "total_rounds": 20,
+  "total_rounds": 30,
   "rounds_per_stage": 10,
-  "total_stages": 2,
+  "total_stages": 3,
   "drawn_cards": [],
   "available_cards": [
     "K001",
@@ -109,26 +112,7 @@
     "K099",
     "K100"
   ],
-  "participants": {
-    "P01": {
-      "code": "P01",
-      "name": "cihuy",
-      "allocations": {},
-      "current_value": 100000000,
-      "prev_value": 100000000,
-      "current_rank": 1,
-      "prev_rank": 1,
-      "max_drawdown": 0.0,
-      "history": [
-        {
-          "round": 0,
-          "value": 100000000,
-          "drawdown": 0.0,
-          "rank": 1
-        }
-      ]
-    }
-  },
+  "participants": {},
   "asset_indexes": {
     "sukuk": [
       100.0
@@ -153,5 +137,5 @@
     "emas": 1.0,
     "campuran": 1.0
   },
-  "message": "Mode durasi diubah ke 2 Tahap (20 Putaran)."
+  "message": "Game dimulai (3 Tahap / 30 Putaran). Silakan peserta mendaftar dan mengisi alokasi Tahap 1."
 }

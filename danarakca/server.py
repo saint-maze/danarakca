@@ -117,15 +117,20 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         elif path.startswith('/api/participant/'):
             identifier = path.split('/')[-1]
-            p = engine.state['participants'].get(identifier.upper())
+            decoded = urllib.parse.unquote(identifier).strip()
+            p = engine.state['participants'].get(decoded.upper())
             if not p:
-                decoded = urllib.parse.unquote(identifier).strip().lower()
                 for part in engine.state['participants'].values():
-                    if part['name'].strip().lower() == decoded or part['code'].lower() == decoded:
+                    if part['name'].strip().lower() == decoded.lower() or part['code'].lower() == decoded.lower():
                         p = part
                         break
             if not p:
-                return self.send_error_json(f"Peserta '{identifier}' tidak ditemukan", 404)
+                name_param = (query.get('name', [''])[0] or '').strip()
+                fallback_name = name_param or (decoded if not (len(decoded) <= 4 and decoded.upper().startswith('P') and decoded[1:].isdigit()) else '')
+                if fallback_name:
+                    p = engine.register_participant(name=fallback_name)
+            if not p:
+                return self.send_error_json(f"Peserta '{decoded}' tidak ditemukan", 404)
             return self.send_json({'success': True, 'data': p})
 
         elif path == '/api/cards':
@@ -183,6 +188,13 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
         try:
             body = self.parse_json_body()
 
+            if path.startswith('/api/') and path != '/api/facilitator/reset':
+                if body.get('client_sync') or body.get('participant_sync'):
+                    engine.sync_state(
+                        client_sync=body.get('client_sync'),
+                        participant_sync=body.get('participant_sync')
+                    )
+
             # Admin Authentication Route
             if path == '/api/admin/login':
                 u = body.get('username', '').strip()
@@ -195,18 +207,47 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
                     return self.send_json({'success': True, 'token': token, 'message': 'Login Fasilitator Berhasil!'})
                 return self.send_error_json('ID atau Password Fasilitator salah!', 401)
 
+            elif path == '/api/state/sync':
+                return self.send_json({'success': True, 'data': engine.get_public_state()})
+
+            elif path == '/api/player/sync':
+                p_info = body.get('participant_sync') or {}
+                name = (p_info.get('name') or body.get('name') or '').strip()
+                code = (p_info.get('code') or body.get('code') or '').strip()
+                p = None
+                if name:
+                    p = engine.register_participant(name=name, code=code)
+                elif code:
+                    p = engine.state['participants'].get(code.upper())
+                return self.send_json({
+                    'success': True,
+                    'data': {
+                        'state': engine.get_public_state(),
+                        'participant': p
+                    }
+                })
+
             elif path == '/api/participant/register':
                 name = (body.get('name') or body.get('code') or '').strip()
                 code = body.get('code') if body.get('name') else None
                 p = engine.register_participant(name=name, code=code)
-                return self.send_json({'success': True, 'data': p})
+                return self.send_json({'success': True, 'data': p, 'state': engine.get_public_state()})
 
             elif path == '/api/participant/submit':
                 code_or_name = body.get('code') or body.get('name')
+                name = body.get('name')
                 stage = body.get('stage')
                 allocation = body.get('allocation')
-                alloc = engine.submit_allocation(code_or_name, stage, allocation)
-                return self.send_json({'success': True, 'data': alloc, 'message': 'Alokasi berhasil disimpan!'})
+                alloc = engine.submit_allocation(code_or_name, stage, allocation, name=name)
+                det_code = engine.make_participant_code(name) if name else str(code_or_name).upper()
+                p = engine.state['participants'].get(det_code)
+                return self.send_json({
+                    'success': True,
+                    'data': alloc,
+                    'participant': p,
+                    'state': engine.get_public_state(),
+                    'message': 'Alokasi berhasil disimpan!'
+                })
 
             # Protected Facilitator Routes: require valid Admin token
             elif path.startswith('/api/facilitator/'):
@@ -221,7 +262,12 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
                 elif path == '/api/facilitator/toggle-input':
                     status = body.get('open')
                     is_open = engine.toggle_stage_input(status)
-                    return self.send_json({'success': True, 'stage_input_open': is_open, 'message': engine.state['message']})
+                    return self.send_json({
+                        'success': True,
+                        'stage_input_open': is_open,
+                        'state': engine.get_public_state(),
+                        'message': engine.state['message']
+                    })
 
                 elif path == '/api/facilitator/next-stage':
                     new_stage = engine.next_stage()
@@ -234,6 +280,8 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
 
                 elif path == '/api/facilitator/reset':
                     preserve = body.get('preserve_participants', False)
+                    if preserve and body.get('client_sync'):
+                        engine.sync_state(client_sync=body.get('client_sync'))
                     total_stages = body.get('total_stages')
                     engine.reset_game(preserve_participants=preserve, total_stages=total_stages)
                     return self.send_json({'success': True, 'message': 'Permainan berhasil di-reset!', 'state': engine.get_public_state()})
