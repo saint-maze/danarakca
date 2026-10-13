@@ -170,10 +170,14 @@
               <p class="text-caption text-smoke mt-0.5">Atur bobot 5 kelas aset. Total alokasi wajib tepat 100%.</p>
             </div>
 
-            <!-- High-Contrast Sum Meter Badge (Spacious, prominent, not mepet) -->
-            <div class="flex items-center justify-between sm:justify-end gap-3 pt-1 sm:pt-0">
-              <span class="text-caption text-smoke sm:hidden font-mono text-[11px] uppercase tracking-wider">Total
-                Terpilih:</span>
+            <!-- High-Contrast Sum Meter Badge & Auto-Balance Button -->
+            <div class="flex items-center justify-between sm:justify-end gap-2.5 pt-1 sm:pt-0">
+              <span class="text-caption text-smoke sm:hidden font-mono text-[11px] uppercase tracking-wider">Total:</span>
+              <button type="button" id="btnAutoBalance" onclick="autoBalanceAllocation()"
+                class="hidden px-2.5 py-1.5 rounded-button font-mono text-xs font-semibold border border-pulse text-pulse hover:bg-pulse/10 transition-colors cursor-pointer shadow-sm active:scale-95"
+                title="Sesuaikan otomatis agar pas 100%">
+                ⚡ Seimbangkan 100%
+              </button>
               <div id="sumBadge"
                 class="px-3.5 py-1.5 rounded-button font-mono text-sm font-semibold tabular border bg-obsidian text-white border-chalk shadow-sm">
                 Total: 100%

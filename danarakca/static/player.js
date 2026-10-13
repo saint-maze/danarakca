@@ -480,6 +480,8 @@ function enableSliders(enable) {
     const el = document.getElementById(`range${capitalize(asset)}`);
     if (el) el.disabled = !enable;
   });
+  const btnAuto = document.getElementById('btnAutoBalance');
+  if (btnAuto) btnAuto.disabled = !enable;
 }
 
 function updateCardPreview() {
@@ -503,29 +505,104 @@ function updateCardPreview() {
 // 3. Sliders & Presets
 function onSliderChange(asset, value) {
   userIsEditing = true;
-  allocation[asset] = parseInt(value, 10);
-  document.getElementById(`val${capitalize(asset)}`).innerText = `${allocation[asset]}%`;
+  let targetVal = Math.max(0, Math.min(100, parseInt(value, 10) || 0));
+
+  const assetKeys = ['sukuk', 'saham', 'rdpu', 'emas', 'campuran'];
+  const otherKeys = assetKeys.filter(k => k !== asset);
+  const otherSum = otherKeys.reduce((sum, k) => sum + (allocation[k] || 0), 0);
+  const total = targetVal + otherSum;
+
+  if (total > 100) {
+    let excess = total - 100;
+    if (otherSum > 0) {
+      let remainingExcess = excess;
+      const sortedOthers = [...otherKeys].sort((a, b) => allocation[b] - allocation[a]);
+      for (const k of sortedOthers) {
+        const deduct = Math.min(allocation[k], Math.round(excess * (allocation[k] / otherSum)));
+        allocation[k] -= deduct;
+        remainingExcess -= deduct;
+      }
+      if (remainingExcess > 0) {
+        for (const k of sortedOthers) {
+          const deduct = Math.min(allocation[k], remainingExcess);
+          allocation[k] -= deduct;
+          remainingExcess -= deduct;
+          if (remainingExcess <= 0) break;
+        }
+      } else if (remainingExcess < 0) {
+        allocation[sortedOthers[0]] -= remainingExcess;
+      }
+    } else {
+      targetVal = 100;
+    }
+  }
+
+  allocation[asset] = targetVal;
+  syncSliders();
+
   if (navigator.vibrate && allocation[asset] % 10 === 0) {
     try { navigator.vibrate(6); } catch (e) {}
   }
-  checkTotalSum();
+}
+
+function autoBalanceAllocation() {
+  userIsEditing = true;
+  const assetKeys = ['sukuk', 'saham', 'rdpu', 'emas', 'campuran'];
+  const currentSum = assetKeys.reduce((s, k) => s + (allocation[k] || 0), 0);
+
+  if (currentSum === 100) return;
+
+  if (currentSum === 0) {
+    allocation = { sukuk: 20, saham: 20, rdpu: 20, emas: 20, campuran: 20 };
+  } else {
+    let scaled = {};
+    let newSum = 0;
+    assetKeys.forEach(k => {
+      scaled[k] = Math.round((allocation[k] / currentSum) * 100);
+      newSum += scaled[k];
+    });
+
+    let diff = 100 - newSum;
+    if (diff !== 0) {
+      const maxKey = assetKeys.reduce((max, k) => scaled[k] > scaled[max] ? k : max, assetKeys[0]);
+      scaled[maxKey] += diff;
+    }
+    allocation = scaled;
+  }
+
+  if (navigator.vibrate) {
+    try { navigator.vibrate([15, 30, 15]); } catch (e) {}
+  }
+
+  syncSliders();
+  showToast('Alokasi berhasil diseimbangkan pas 100%', 'info');
 }
 
 function checkTotalSum() {
   const sum = allocation.sukuk + allocation.saham + allocation.rdpu + allocation.emas + allocation.campuran;
   const sumBadge = document.getElementById('sumBadge');
   const btnSubmit = document.getElementById('btnSubmitAllocation');
+  const btnAutoBalance = document.getElementById('btnAutoBalance');
   if (!sumBadge) return;
 
   sumBadge.innerText = `Total: ${sum}%`;
 
   if (sum === 100) {
     sumBadge.className = 'px-3.5 py-1.5 rounded-button font-mono text-sm font-semibold tabular border bg-obsidian text-white border-chalk shadow-sm';
+    if (btnAutoBalance) btnAutoBalance.classList.add('hidden');
     if (gameState && gameState.stage_input_open && btnSubmit) {
       btnSubmit.disabled = false;
     }
   } else {
     sumBadge.className = 'px-3.5 py-1.5 rounded-button font-mono text-sm font-semibold tabular border bg-obsidian text-loss border-loss shadow-sm';
+    if (btnAutoBalance) {
+      btnAutoBalance.classList.remove('hidden');
+      if (sum < 100) {
+        btnAutoBalance.innerText = `⚡ Seimbangkan 100% (+${100 - sum}%)`;
+      } else {
+        btnAutoBalance.innerText = `⚡ Seimbangkan 100%`;
+      }
+    }
     if (btnSubmit) btnSubmit.disabled = true;
   }
 }
