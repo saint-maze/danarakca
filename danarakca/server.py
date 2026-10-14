@@ -95,6 +95,8 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
         parsed = self.get_effective_path()
         if parsed.path in ('/admin', '/admin/'):
             self.path = '/admin-login.html'
+        elif parsed.path in ('/broadcast', '/broadcast/', '/screen', '/screen/'):
+            self.path = '/broadcast.html'
         return super().do_HEAD()
 
     def do_GET(self):
@@ -174,6 +176,8 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         if path in ('/admin', '/admin/'):
             self.path = '/admin-login.html'
+        elif path in ('/broadcast', '/broadcast/', '/screen', '/screen/'):
+            self.path = '/broadcast.html'
 
         # Fallback to serving static files
         return super().do_GET()
@@ -331,7 +335,8 @@ def run(port=PORT):
     httpd = ReusableThreadingServer(server_address, DanarakcaRequestHandler)
     print(f"Server Game Danarakca berjalan di http://localhost:{port}")
     print(f"   - Tampilan Utama / Pilihan: http://localhost:{port}/")
-    print(f"   - Layar Fasilitator / Proyektor: http://localhost:{port}/facilitator.html")
+    print(f"   - Layar Broadcast Proyektor: http://localhost:{port}/broadcast")
+    print(f"   - Layar Fasilitator (Admin): http://localhost:{port}/facilitator.html")
     print(f"   - Layar Peserta (Mobile HP): http://localhost:{port}/player.html")
     print(f"   - Login Admin: http://localhost:{port}/admin")
     print(f"   - Kredensial Fasilitator: ID='admin', Password='danarakca2026'")

@@ -21,6 +21,22 @@
       "destination": "/danarakca/static/player.html"
     },
     {
+      "source": "/broadcast",
+      "destination": "/danarakca/static/broadcast.html"
+    },
+    {
+      "source": "/broadcast/",
+      "destination": "/danarakca/static/broadcast.html"
+    },
+    {
+      "source": "/screen",
+      "destination": "/danarakca/static/broadcast.html"
+    },
+    {
+      "source": "/screen/",
+      "destination": "/danarakca/static/broadcast.html"
+    },
+    {
       "source": "/",
       "destination": "/danarakca/static/index.html"
     },

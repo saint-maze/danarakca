@@ -69,13 +69,20 @@
           </div>
         </a>
 
-        <!-- Kunci Layar (Mobile & Tablet Top Right < xl) -->
-        <button onclick="adminLogout()"
-          class="xl:hidden h-9 px-3 sm:px-4 flex items-center gap-1.5 rounded-button bg-carbon border border-smoke/60 hover:border-chalk text-chalk hover:text-white font-mono text-xs font-medium tracking-tight transition-all cursor-pointer hover:bg-obsidian shadow-sm shrink-0"
-          title="Keluar">
-          <span>Keluar</span>
-          <span class="text-smoke">↗</span>
-        </button>
+        <!-- Mobile & Tablet Controls (< xl) -->
+        <div class="xl:hidden flex items-center gap-2">
+          <a href="broadcast.html" target="_blank"
+            class="h-9 px-2.5 flex items-center gap-1 rounded-button bg-carbon border border-pulse/60 hover:border-pulse text-pulse font-mono text-xs font-medium transition-all cursor-pointer hover:bg-obsidian shadow-sm shrink-0"
+            title="Buka Layar Broadcast">
+            <span>📺</span>
+          </a>
+          <button onclick="adminLogout()"
+            class="h-9 px-3 sm:px-4 flex items-center gap-1.5 rounded-button bg-carbon border border-smoke/60 hover:border-chalk text-chalk hover:text-white font-mono text-xs font-medium tracking-tight transition-all cursor-pointer hover:bg-obsidian shadow-sm shrink-0"
+            title="Keluar">
+            <span>Keluar</span>
+            <span class="text-smoke">↗</span>
+          </button>
+        </div>
       </div>
 
       <!-- Live Session Status Metrics -->
@@ -119,13 +126,22 @@
           </div>
         </div>
 
-        <!-- Kunci Layar (Desktop View >= xl) -->
-        <button onclick="adminLogout()"
-          class="hidden xl:flex h-9 px-4 items-center gap-1.5 rounded-button bg-carbon border border-smoke/60 hover:border-chalk text-chalk hover:text-white font-mono text-xs font-medium tracking-tight transition-all cursor-pointer hover:bg-obsidian shadow-sm shrink-0"
-          title="Keluar">
-          <span>Keluar</span>
-          <span class="text-smoke">↗</span>
-        </button>
+        <!-- Broadcast Screen & Kunci Layar (Desktop View >= xl) -->
+        <div class="hidden xl:flex items-center gap-2">
+          <a href="broadcast.html" target="_blank"
+            class="h-9 px-3.5 flex items-center gap-1.5 rounded-button bg-carbon border border-pulse/60 hover:border-pulse text-pulse hover:text-white font-mono text-xs font-medium tracking-tight transition-all cursor-pointer hover:bg-obsidian shadow-sm shrink-0"
+            title="Buka Layar Proyektor / Broadcast di Tab atau Window Baru">
+            <span>📺</span>
+            <span>Layar Broadcast</span>
+            <span class="text-pulse">↗</span>
+          </a>
+          <button onclick="adminLogout()"
+            class="h-9 px-4 flex items-center gap-1.5 rounded-button bg-carbon border border-smoke/60 hover:border-chalk text-chalk hover:text-white font-mono text-xs font-medium tracking-tight transition-all cursor-pointer hover:bg-obsidian shadow-sm shrink-0"
+            title="Keluar">
+            <span>Keluar</span>
+            <span class="text-smoke">↗</span>
+          </button>
+        </div>
 
       </div>
 
