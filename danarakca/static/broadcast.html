@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Danarakca · Layar Siaran Proyektor</title>
+  <title>Broadcast</title>
   <link rel="icon" type="image/png" href="img/thunderbolt.png">
   <link rel="apple-touch-icon" href="img/thunderbolt.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -99,7 +99,7 @@
 
           <button id="btnFullscreen" onclick="toggleFullscreen()"
             class="h-9 px-3 flex items-center justify-center rounded-button bg-carbon border border-graphite hover:border-chalk text-smoke hover:text-chalk font-mono text-xs transition-all cursor-pointer hover:bg-obsidian shrink-0"
-            title="Layar Penuh (F11)">
+            title="Layar Penuh">
             <svg id="fullscreenIconSvg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
             </svg>
@@ -112,7 +112,7 @@
   </header>
 
   <!-- Main Presentation Content -->
-  <main class="max-w-[1720px] w-full mx-auto px-4 sm:px-8 py-5 flex-grow relative z-10 flex flex-col gap-6">
+  <main class="max-w-[1720px] w-full mx-auto px-4 sm:px-8 py-5 pb-8 flex-grow relative z-10 flex flex-col gap-6">
 
     <!-- TOP SECTION: Active Scenario Card (7 Cols) & Leaderboard (5 Cols) -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
@@ -123,11 +123,6 @@
 
           <!-- Card Placeholder (When Round 0) -->
           <div id="cardPlaceholder" class="flex flex-col items-center justify-center text-center py-16 sm:py-20 px-4 h-full">
-            <div class="w-12 h-12 rounded-card hairline bg-obsidian flex items-center justify-center mb-4 text-smoke">
-              <svg class="w-6 h-6 stroke-current" fill="none" viewBox="0 0 24 24" stroke-width="1.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
-              </svg>
-            </div>
             <h2 class="text-heading-sm sm:text-heading text-chalk mb-2 font-medium">
               Sesi Simulasi Siap Dimulai
             </h2>
@@ -344,18 +339,6 @@
     </div>
 
   </main>
-
-  <!-- Broadcast Footer -->
-  <footer class="hairline-t bg-obsidian/95 backdrop-blur-md py-3 text-caption text-smoke relative z-10">
-    <div class="w-full max-w-[1720px] mx-auto px-4 sm:px-8 flex items-center justify-between text-xs font-mono">
-      <div>
-        Danarakca · Simulasi Alokasi Portofolio Berbasis Skenario Pasar · DJPPR Kementerian Keuangan RI
-      </div>
-      <div class="flex items-center gap-4">
-        <span>Tekan <kbd class="px-1.5 py-0.5 rounded bg-graphite text-chalk">F11</kbd> untuk Layar Penuh</span>
-      </div>
-    </div>
-  </footer>
 
   <!-- QR Code Modal (for joining) -->
   <div id="qrModal" class="fixed inset-0 z-50 bg-obsidian/80 backdrop-blur-md hidden items-center justify-center p-4">
