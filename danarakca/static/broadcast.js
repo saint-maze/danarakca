@@ -11,6 +11,18 @@ let chartTopPlayers = null;
 let chartAssetIndexes = null;
 let broadcastPollTimeout = null;
 let lastRenderedCardId = null;
+let lastRecentCardsHash = '';
+let lastLeaderboardHash = '';
+let lastChartsHash = '';
+let cachedQrUrl = null;
+let cachedQrHtml = null;
+
+function setElementText(id, val) {
+  const el = document.getElementById(id);
+  if (el && el.innerText !== val) {
+    el.innerText = val;
+  }
+}
 
 // Currency & Percentage Formatters
 function formatRupiah(num) {
@@ -224,31 +236,21 @@ function renderBroadcast() {
   const totalRounds = gameState.total_rounds || 30;
 
   // Header Badges
-  const bRound = document.getElementById('badgeRound');
-  if (bRound) bRound.innerText = `${round} / ${totalRounds}`;
+  setElementText('badgeRound', `${round} / ${totalRounds}`);
 
-  const bTime = document.getElementById('badgeSimTime');
-  if (bTime) {
-    if (round === 0) {
-      bTime.innerText = 'Tahun 1 · Awal';
-    } else {
-      const year = Math.ceil(round / 4);
-      const qtr = ((round - 1) % 4) + 1;
-      bTime.innerText = `Tahun ${year} · Q${qtr}`;
-    }
+  if (round === 0) {
+    setElementText('badgeSimTime', 'Tahun 1 · Awal');
+  } else {
+    const year = Math.ceil(round / 4);
+    const qtr = ((round - 1) % 4) + 1;
+    setElementText('badgeSimTime', `Tahun ${year} · Q${qtr}`);
   }
 
-  const bStage = document.getElementById('badgeStage');
-  if (bStage) bStage.innerText = `${gameState.current_stage || 1} / ${gameState.total_stages || 3}`;
+  setElementText('badgeStage', `${gameState.current_stage || 1} / ${gameState.total_stages || 3}`);
+  setElementText('badgeParticipants', `${gameState.total_participants || 0}`);
 
-  const bPart = document.getElementById('badgeParticipants');
-  if (bPart) bPart.innerText = `${gameState.total_participants || 0}`;
-
-  const bWealth = document.getElementById('badgeHighestWealth');
-  if (bWealth) {
-    const top1 = (gameState.leaderboard_top10 || [])[0];
-    bWealth.innerText = top1 ? formatJuta(top1.current_value) : 'Rp 100,0 Jt';
-  }
+  const top1 = (gameState.leaderboard_top10 || [])[0];
+  setElementText('badgeHighestWealth', top1 ? formatJuta(top1.current_value) : 'Rp 100,0 Jt');
 
   // Active Scenario Card
   const lastCard = gameState.last_drawn_card;
@@ -272,20 +274,11 @@ function renderBroadcast() {
       cardContent.classList.add('card-zoom');
     }
 
-    const rTag = document.getElementById('cardRoundTag');
-    if (rTag) rTag.innerText = `PUTARAN ${lastCard.round} · ${c.id}`;
-
-    const catTag = document.getElementById('cardCategoryTag');
-    if (catTag) catTag.innerText = c.category;
-
-    const titleEl = document.getElementById('cardTitle');
-    if (titleEl) titleEl.innerText = c.title;
-
-    const narrEl = document.getElementById('cardNarration');
-    if (narrEl) narrEl.innerText = c.narration;
-
-    const expEl = document.getElementById('cardExplanation');
-    if (expEl) expEl.innerText = c.explanation;
+    setElementText('cardRoundTag', `PUTARAN ${lastCard.round} · ${c.id}`);
+    setElementText('cardCategoryTag', c.category);
+    setElementText('cardTitle', c.title);
+    setElementText('cardNarration', c.narration);
+    setElementText('cardExplanation', c.explanation);
 
     // Allocation Input Status Badge
     const inputStatusText = document.getElementById('inputStatusText');
@@ -294,13 +287,17 @@ function renderBroadcast() {
 
     if (inputStatusText && inputStatusDot && badgeInputStatus) {
       if (gameState.stage_input_open) {
-        inputStatusText.innerText = 'Alokasi Terbuka';
-        inputStatusDot.className = 'w-1.5 h-1.5 rounded-full bg-pulse animate-pulse';
-        badgeInputStatus.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-tag font-mono text-xs font-semibold bg-pulse/10 border border-pulse/30 text-pulse';
+        if (inputStatusText.innerText !== 'Alokasi Terbuka') {
+          inputStatusText.innerText = 'Alokasi Terbuka';
+          inputStatusDot.className = 'w-1.5 h-1.5 rounded-full bg-pulse animate-pulse';
+          badgeInputStatus.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-tag font-mono text-xs font-semibold bg-pulse/10 border border-pulse/30 text-pulse';
+        }
       } else {
-        inputStatusText.innerText = 'Alokasi Ditutup';
-        inputStatusDot.className = 'w-1.5 h-1.5 rounded-full bg-smoke';
-        badgeInputStatus.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-tag font-mono text-xs font-semibold bg-obsidian hairline text-smoke';
+        if (inputStatusText.innerText !== 'Alokasi Ditutup') {
+          inputStatusText.innerText = 'Alokasi Ditutup';
+          inputStatusDot.className = 'w-1.5 h-1.5 rounded-full bg-smoke';
+          badgeInputStatus.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-tag font-mono text-xs font-semibold bg-obsidian hairline text-smoke';
+        }
       }
     }
 
@@ -352,12 +349,16 @@ function renderRecentCards() {
   const container = document.getElementById('recentCardsList');
   if (!container) return;
 
-  if (!gameState.recent_cards || gameState.recent_cards.length === 0) {
+  const recent = (gameState.recent_cards || []).slice(0, 3);
+  const hash = recent.map(c => `${c.round}-${c.card_id}`).join('|');
+  if (hash === lastRecentCardsHash) return;
+  lastRecentCardsHash = hash;
+
+  if (recent.length === 0) {
     container.innerHTML = '<div class="text-caption text-smoke italic py-1 col-span-3">Belum ada riwayat kartu sebelumnya.</div>';
     return;
   }
 
-  const recent = gameState.recent_cards.slice(0, 3);
   container.innerHTML = recent.map(c => `
     <div class="flex items-center justify-between p-2.5 rounded-card bg-obsidian hairline text-caption">
       <div class="flex items-center gap-2 overflow-hidden">
@@ -372,7 +373,9 @@ function renderRecentCards() {
 }
 
 function switchLbTab(tab) {
+  if (currentTab === tab) return;
   currentTab = tab;
+  lastLeaderboardHash = '';
   const btn10 = document.getElementById('btnTabTop10');
   const btnT = document.getElementById('btnTabTangguh');
   const title = document.getElementById('lbTabTitle');
@@ -401,6 +404,10 @@ function renderLeaderboard() {
   if (currentTab === 'tangguh' && list.length === 0 && (gameState.leaderboard_top10 || []).length > 0) {
     list = gameState.leaderboard_top10;
   }
+
+  const hash = `${currentTab}:${list.map(p => `${p.code}-${p.current_value}-${p.current_rank}-${p.max_drawdown}`).join('|')}`;
+  if (hash === lastLeaderboardHash) return;
+  lastLeaderboardHash = hash;
 
   if (list.length === 0) {
     tbody.innerHTML = `
@@ -454,13 +461,17 @@ function updateCharts() {
   if (!gameState || !chartTopPlayers || !chartAssetIndexes) return;
 
   const currentRound = gameState.current_round || 0;
+  const top5 = (gameState.leaderboard_top10 || []).slice(0, 5);
+  const chartHash = `${currentRound}:${top5.map(p => `${p.code}-${p.current_value}`).join('|')}:${(gameState.asset_history?.sukuk || []).length}`;
+  if (chartHash === lastChartsHash) return;
+  lastChartsHash = chartHash;
+
   const labels = ['Awal'];
   for (let r = 1; r <= currentRound; r++) {
     labels.push(`K${r}`);
   }
 
   // Top 5 Portfolios
-  const top5 = (gameState.leaderboard_top10 || []).slice(0, 5);
   const lineColors = ['#f3f3f3', '#8fb3d9', '#8fd9a8', '#d9c38f', '#b38fd9'];
 
   const playerDatasets = top5.map((p, idx) => ({
@@ -490,25 +501,26 @@ function updateCharts() {
 }
 
 // Fullscreen Toggle
+const FS_EXPAND_PATH = 'M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15';
+const FS_COMPRESS_PATH = 'M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25';
+
+function updateFullscreenIcon() {
+  const svg = document.getElementById('fullscreenIconSvg');
+  if (!svg) return;
+  const path = svg.querySelector('path');
+  if (!path) return;
+  path.setAttribute('d', document.fullscreenElement ? FS_COMPRESS_PATH : FS_EXPAND_PATH);
+}
+
 function toggleFullscreen() {
-  const icon = document.getElementById('fullscreenIcon');
   if (!document.fullscreenElement) {
     document.documentElement.requestFullscreen().catch(() => {});
-    if (icon) icon.innerText = '⤓';
-  } else {
-    if (document.exitFullscreen) {
-      document.exitFullscreen().catch(() => {});
-    }
-    if (icon) icon.innerText = '⛶';
+  } else if (document.exitFullscreen) {
+    document.exitFullscreen().catch(() => {});
   }
 }
 
-document.addEventListener('fullscreenchange', () => {
-  const icon = document.getElementById('fullscreenIcon');
-  if (icon) {
-    icon.innerText = document.fullscreenElement ? '⤓' : '⛶';
-  }
-});
+document.addEventListener('fullscreenchange', updateFullscreenIcon);
 
 // QR Code Modal
 function showQRModal() {
@@ -518,20 +530,28 @@ function showQRModal() {
   if (!modal) return;
 
   const joinUrl = window.location.origin + '/player.html';
-  if (urlText) urlText.innerText = joinUrl;
+  if (urlText && urlText.innerText !== joinUrl) {
+    urlText.innerText = joinUrl;
+  }
 
   if (container) {
-    try {
-      if (typeof qrcode === 'function') {
-        const qr = qrcode(0, 'M');
-        qr.addData(joinUrl);
-        qr.make();
-        container.innerHTML = qr.createImgTag(6, 12);
-      } else {
+    if (cachedQrUrl === joinUrl && cachedQrHtml) {
+      container.innerHTML = cachedQrHtml;
+    } else {
+      try {
+        if (typeof qrcode === 'function') {
+          const qr = qrcode(0, 'M');
+          qr.addData(joinUrl);
+          qr.make();
+          cachedQrHtml = qr.createImgTag(6, 12);
+          cachedQrUrl = joinUrl;
+          container.innerHTML = cachedQrHtml;
+        } else {
+          container.innerHTML = `<a href="${joinUrl}" target="_blank" class="text-obsidian underline text-xs font-mono">Buka Tautan</a>`;
+        }
+      } catch (e) {
         container.innerHTML = `<a href="${joinUrl}" target="_blank" class="text-obsidian underline text-xs font-mono">Buka Tautan</a>`;
       }
-    } catch (e) {
-      container.innerHTML = `<a href="${joinUrl}" target="_blank" class="text-obsidian underline text-xs font-mono">Buka Tautan</a>`;
     }
   }
 

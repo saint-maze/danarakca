@@ -17,9 +17,6 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
   <style>
-    .glow-pulse {
-      box-shadow: 0 0 24px rgba(152, 255, 56, 0.12);
-    }
     .card-zoom {
       animation: cardZoomIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
@@ -48,8 +45,7 @@
               <span class="text-heading-xs tracking-tight text-chalk font-semibold block leading-tight">
                 Danarakca
               </span>
-              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-tag bg-pulse/10 border border-pulse/30 text-pulse font-mono text-[11px] font-semibold">
-                <span class="w-1.5 h-1.5 rounded-full bg-pulse animate-pulse"></span>
+              <span class="px-2 py-0.5 rounded-tag border border-graphite bg-carbon text-smoke font-mono text-[11px] font-semibold tracking-wider">
                 SIARAN UTAMA
               </span>
             </div>
@@ -100,14 +96,18 @@
           <button onclick="showQRModal()"
             class="h-9 px-3.5 flex items-center gap-2 rounded-button bg-carbon border border-graphite hover:border-chalk text-chalk font-mono text-xs font-medium transition-all cursor-pointer hover:bg-obsidian shadow-sm shrink-0"
             title="Tampilkan QR Code pendaftaran">
-            <span>📱</span>
+            <svg class="w-3.5 h-3.5 text-smoke shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.5A.75.75 0 014.5 3.75h4.5a.75.75 0 01.75.75v4.5a.75.75 0 01-.75.75h-4.5a.75.75 0 01-.75-.75V4.5zm10.5 0a.75.75 0 01.75-.75h4.5a.75.75 0 01.75.75v4.5a.75.75 0 01-.75.75h-4.5a.75.75 0 01-.75-.75V4.5zM3.75 15a.75.75 0 01.75-.75h4.5a.75.75 0 01.75.75v4.5a.75.75 0 01-.75.75h-4.5a.75.75 0 01-.75-.75V15zm10.5 0a.75.75 0 01.75-.75h1.5a.75.75 0 01.75.75v1.5a.75.75 0 01-.75.75h-1.5a.75.75 0 01-.75-.75V15zm3.75 3.75a.75.75 0 01.75-.75h1.5a.75.75 0 01.75.75v1.5a.75.75 0 01-.75.75h-1.5a.75.75 0 01-.75-.75v-1.5z" />
+            </svg>
             <span class="hidden md:inline">Pindai QR</span>
           </button>
 
           <button id="btnFullscreen" onclick="toggleFullscreen()"
             class="h-9 px-3 flex items-center justify-center rounded-button bg-carbon border border-graphite hover:border-chalk text-smoke hover:text-chalk font-mono text-xs transition-all cursor-pointer hover:bg-obsidian shrink-0"
             title="Layar Penuh (F11)">
-            <span id="fullscreenIcon">⛶</span>
+            <svg id="fullscreenIconSvg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+            </svg>
           </button>
         </div>
 
@@ -128,19 +128,17 @@
 
           <!-- Card Placeholder (When Round 0) -->
           <div id="cardPlaceholder" class="flex flex-col items-center justify-center text-center py-16 sm:py-20 px-4 h-full">
-            <div class="w-16 h-16 rounded-card hairline bg-obsidian flex items-center justify-center mb-5 text-2xl">
-              🎲
+            <div class="w-12 h-12 rounded-card hairline bg-obsidian flex items-center justify-center mb-4 text-smoke">
+              <svg class="w-6 h-6 stroke-current" fill="none" viewBox="0 0 24 24" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+              </svg>
             </div>
             <h2 class="text-heading-sm sm:text-heading text-chalk mb-2 font-medium">
               Sesi Simulasi Siap Dimulai
             </h2>
-            <p class="text-body text-smoke max-w-lg mb-6 leading-relaxed text-sm">
-              Peserta memindai kode QR atau membuka tautan pendaftaran untuk bergabung ke dalam sesi.
+            <p class="text-body text-smoke max-w-lg leading-relaxed text-sm">
+              Pendaftaran peserta dibuka. Skenario pasar kuartal pertama akan ditampilkan saat putaran dimulai.
             </p>
-            <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-button hairline bg-obsidian font-mono text-xs text-ash">
-              <span class="w-2 h-2 rounded-full bg-pulse animate-pulse"></span>
-              Menunggu Fasilitator membuka Putaran 1
-            </div>
           </div>
 
           <!-- Active Card Content -->
