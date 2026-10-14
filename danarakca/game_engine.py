@@ -118,6 +118,13 @@ class GameEngine:
         # roll back the shared game (e.g. jump stages or resurrect a finished round).
         if getattr(self, '_redis_read_failed', False):
             return
+        # Safety guard: do not overwrite a running session in Redis with 0 participants if this container has none
+        if hasattr(self, 'state') and isinstance(self.state, dict):
+            cur_round = int(self.state.get('current_round', 0))
+            part_count = len(self.state.get('participants', {}))
+            if cur_round > 0 and part_count == 0:
+                return
+
         import urllib.request
         try:
             payload = json.dumps(["SET", "danarakca_state", json.dumps(self.state, ensure_ascii=False)]).encode('utf-8')
@@ -145,33 +152,71 @@ class GameEngine:
 
     def refresh_state(self):
         self._redis_read_failed = False
+        loaded = None
+
         # 1. Try Upstash Redis if configured
         if self.redis_url and self.redis_token:
             redis_state = self._load_from_redis()
             if isinstance(redis_state, dict):
-                self.state = redis_state
-                return True
+                loaded = redis_state
 
-        # 2. Try state file (local or /tmp)
-        if os.path.exists(self.state_file):
+        # 2. Try state file (local or /tmp) if redis not loaded
+        if not loaded and os.path.exists(self.state_file):
             try:
                 with open(self.state_file, 'r', encoding='utf-8') as f:
-                    loaded = json.load(f)
-                if isinstance(loaded, dict):
-                    if not hasattr(self, 'state') or not isinstance(self.state, dict):
-                        self.state = loaded
-                    else:
-                        # Only overwrite in-memory state if file has newer or equal version
-                        file_sess = int(loaded.get('session_id', 0))
-                        mem_sess = int(self.state.get('session_id', 0))
-                        file_ver = int(loaded.get('state_version', 0))
-                        mem_ver = int(self.state.get('state_version', 0))
-                        if file_sess > mem_sess or (file_sess == mem_sess and file_ver >= mem_ver):
-                            self.state = loaded
-                    return True
+                    file_state = json.load(f)
+                if isinstance(file_state, dict):
+                    loaded = file_state
             except Exception as e:
                 print(f"Error loading state file: {e}")
-        return False
+
+        if not loaded:
+            return False
+
+        if not hasattr(self, 'state') or not isinstance(self.state, dict):
+            self.state = loaded
+            return True
+
+        file_sess = int(loaded.get('session_id', 0))
+        mem_sess = int(self.state.get('session_id', 0))
+        file_ver = int(loaded.get('state_version', 0))
+        mem_ver = int(self.state.get('state_version', 0))
+
+        if file_sess > mem_sess:
+            self.state = loaded
+            return True
+        elif file_sess < mem_sess:
+            return True
+
+        # Same session: merge participants and drawn cards to prevent participant loss or round rollback
+        mem_participants = self.state.get('participants', {})
+        loaded_participants = loaded.get('participants', {})
+        mem_cards = self.state.get('drawn_cards', [])
+        loaded_cards = loaded.get('drawn_cards', [])
+
+        merged_participants = dict(loaded_participants)
+        for code, p in mem_participants.items():
+            if code not in merged_participants:
+                merged_participants[code] = p
+            elif isinstance(p.get('allocations'), dict):
+                cur_allocs = merged_participants[code].setdefault('allocations', {})
+                for stg, alloc in p['allocations'].items():
+                    if stg not in cur_allocs and isinstance(alloc, dict):
+                        cur_allocs[stg] = alloc
+
+        if file_ver >= mem_ver:
+            self.state = loaded
+            self.state['participants'] = merged_participants
+            if len(mem_cards) > len(loaded_cards):
+                self.state['drawn_cards'] = mem_cards
+                self.state['current_round'] = len(mem_cards)
+        else:
+            self.state['participants'] = merged_participants
+            if len(loaded_cards) > len(mem_cards):
+                self.state['drawn_cards'] = loaded_cards
+                self.state['current_round'] = len(loaded_cards)
+
+        return True
 
     def load_or_init_state(self):
         if not self.refresh_state():
@@ -832,8 +877,8 @@ class GameEngine:
 
     def get_leaderboard(self, limit=None):
         sorted_participants = sorted(
-            self.state['participants'].values(),
-            key=lambda p: p['current_value'],
+            self.state.get('participants', {}).values(),
+            key=lambda p: p.get('current_value', 0.0),
             reverse=True
         )
         if limit:
@@ -844,11 +889,23 @@ class GameEngine:
         if max_dd_limit is None:
             max_dd_limit = self.config.get('max_drawdown_award', 0.10)
 
+        participants = list(self.state.get('participants', {}).values())
+        if not participants:
+            return []
+
         eligible = [
-            p for p in self.state['participants'].values()
+            p for p in participants
             if p.get('max_drawdown', 0.0) <= max_dd_limit
         ]
-        return sorted(eligible, key=lambda p: p['current_value'], reverse=True)
+        if eligible:
+            return sorted(eligible, key=lambda p: p.get('current_value', 0.0), reverse=True)
+
+        # Fallback: if all participants exceeded max_dd_limit (common in Phase 2/3 rounds 18-30),
+        # rank by lowest drawdown (best risk discipline), tie-broken by higher portfolio value.
+        return sorted(
+            participants,
+            key=lambda p: (p.get('max_drawdown', 1.0), -p.get('current_value', 0.0))
+        )
 
     def seed_mock_participants(self, count=200):
         """Generates realistic mock participants with diverse strategies for demo/stress-testing."""

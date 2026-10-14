@@ -334,6 +334,11 @@ function applyPlayerSyncResponse(newState, newParticipant, force = false) {
       // Ignore stale response from lagging container
       return;
     } else {
+      if (gameState && newSess === curSess && (newState.current_round || 0) < (gameState.current_round || 0)) {
+        newState.current_round = gameState.current_round;
+        newState.total_rounds = gameState.total_rounds || newState.total_rounds;
+        newState.current_stage = Math.max(newState.current_stage || 1, gameState.current_stage || 1);
+      }
       localStorage.setItem('danarakca_session_id', String(newSess));
       gameState = newState;
     }

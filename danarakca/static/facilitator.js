@@ -277,7 +277,7 @@ function buildClientSync() {
 
 function applyIncomingState(newState, force = false) {
   if (!newState) return;
-  if (!force && gameState) {
+  if (gameState) {
     const curSess = gameState.session_id || 0;
     const newSess = newState.session_id || 0;
     const curVer = gameState.state_version || 0;
@@ -286,11 +286,33 @@ function applyIncomingState(newState, force = false) {
     if (newSess < curSess) {
       return;
     }
-    if (newSess === curSess && newVer < curVer) {
-      if (newState.participants_sync && gameState.participants_sync) {
-        Object.assign(gameState.participants_sync, newState.participants_sync);
+
+    if (newSess === curSess) {
+      // 1. Merge known participants so incoming lagging state never drops them
+      if (gameState.participants_sync) {
+        newState.participants_sync = Object.assign({}, gameState.participants_sync, newState.participants_sync || {});
       }
-      return;
+      // 2. Prevent round rollback from lagging containers
+      if ((newState.current_round || 0) < (gameState.current_round || 0)) {
+        newState.current_round = gameState.current_round;
+        newState.drawn_card_ids = gameState.drawn_card_ids || [];
+        newState.last_drawn_card = gameState.last_drawn_card;
+        newState.recent_cards = gameState.recent_cards || [];
+      }
+      // 3. Preserve leaderboard if incoming is empty but local already had active participants
+      if ((!newState.leaderboard_top10 || newState.leaderboard_top10.length === 0) && (gameState.leaderboard_top10 && gameState.leaderboard_top10.length > 0)) {
+        newState.leaderboard_top10 = gameState.leaderboard_top10;
+      }
+      if ((!newState.investor_tangguh_top5 || newState.investor_tangguh_top5.length === 0) && (gameState.investor_tangguh_top5 && gameState.investor_tangguh_top5.length > 0)) {
+        newState.investor_tangguh_top5 = gameState.investor_tangguh_top5;
+      }
+      const syncCount = Object.keys(newState.participants_sync || {}).length;
+      newState.total_participants = Math.max(newState.total_participants || 0, syncCount, gameState.total_participants || 0);
+
+      // If incoming version is older and not forced, keep current state after merging participants
+      if (!force && newVer < curVer) {
+        return;
+      }
     }
   }
   gameState = newState;
@@ -483,8 +505,8 @@ function switchLbTab(tab) {
   } else {
     btnT.className = 'px-2.5 py-1 rounded-card bg-chalk text-obsidian transition-colors';
     btn10.className = 'px-2.5 py-1 rounded-card text-smoke hover:text-chalk transition-colors';
-    title.innerText = 'Investor Tangguh (Max DD ≤ 10%)';
-    sub.innerText = 'Portofolio tertinggi dengan disiplin drawdown';
+    title.innerText = 'Investor Tangguh (Disiplin Risiko)';
+    sub.innerText = 'Peserta dengan toleransi drawdown terbaik';
   }
   renderLeaderboard();
 }
@@ -493,13 +515,30 @@ function renderLeaderboard() {
   const tbody = document.getElementById('leaderboardTbody');
   if (!tbody || !gameState) return;
 
-  const list = currentTab === 'top10' ? gameState.leaderboard_top10 : gameState.investor_tangguh_top5;
+  let list = currentTab === 'top10' ? (gameState.leaderboard_top10 || []) : (gameState.investor_tangguh_top5 || []);
 
-  if (!list || list.length === 0) {
+  // Safe fallback: if Tangguh list is empty, fallback to top10 rather than an empty void
+  if (currentTab === 'tangguh' && list.length === 0 && (gameState.leaderboard_top10 || []).length > 0) {
+    list = gameState.leaderboard_top10;
+  }
+
+  // Synthesize rows from participants_sync if leaderboard array is missing but participants exist
+  if (list.length === 0 && gameState.participants_sync && Object.keys(gameState.participants_sync).length > 0) {
+    const initial = (gameState.config && gameState.config.initial_capital) || 100000000;
+    list = Object.values(gameState.participants_sync).map((p, idx) => ({
+      name: p.name || 'Peserta',
+      current_value: initial,
+      prev_rank: idx + 1,
+      current_rank: idx + 1,
+      max_drawdown: 0.0
+    }));
+  }
+
+  if (list.length === 0) {
     tbody.innerHTML = `
       <tr>
         <td colspan="6" class="text-center py-10 text-smoke italic">
-          ${currentTab === 'top10' ? 'Menunggu peserta mendaftar...' : 'Belum ada peserta yang memenuhi syarat Max DD ≤ 10%'}
+          Menunggu peserta mendaftar...
         </td>
       </tr>
     `;
@@ -507,10 +546,13 @@ function renderLeaderboard() {
   }
 
   tbody.innerHTML = list.map((p, idx) => {
+    if (!p) return '';
     const rankNum = idx + 1;
 
-    // Rank delta indicator
-    const delta = p.prev_rank - p.current_rank;
+    // Rank delta indicator with null safety
+    const prevRank = p.prev_rank != null ? p.prev_rank : rankNum;
+    const currRank = p.current_rank != null ? p.current_rank : rankNum;
+    const delta = prevRank - currRank;
     let deltaHtml = '<span class="rank-same">–</span>';
     if (delta > 0) {
       deltaHtml = `<span class="rank-up font-mono">↑${delta}</span>`;
@@ -518,20 +560,22 @@ function renderLeaderboard() {
       deltaHtml = `<span class="rank-down font-mono">↓${Math.abs(delta)}</span>`;
     }
 
-    const initial = gameState.config.initial_capital;
-    const returnPct = ((p.current_value / initial - 1) * 100).toFixed(1).replace('.', ',');
-    const returnSign = (p.current_value >= initial ? '+' : '') + returnPct + '%';
-    const returnColor = p.current_value >= initial ? 'text-pulse' : 'text-loss';
-    const mddPct = (p.max_drawdown * 100).toFixed(1).replace('.', ',') + '%';
+    const initial = (gameState.config && gameState.config.initial_capital) || 100000000;
+    const currentVal = p.current_value != null ? p.current_value : initial;
+    const returnPct = ((currentVal / initial - 1) * 100).toFixed(1).replace('.', ',');
+    const returnSign = (currentVal >= initial ? '+' : '') + returnPct + '%';
+    const returnColor = currentVal >= initial ? 'text-pulse' : 'text-loss';
+    const mdd = p.max_drawdown != null ? p.max_drawdown : 0.0;
+    const mddPct = (mdd * 100).toFixed(1).replace('.', ',') + '%';
 
     return `
       <tr class="hover:bg-carbon transition-colors">
         <td class="py-2.5 px-1 text-center font-mono text-ash">${rankNum}</td>
         <td class="py-2.5 px-1 text-center">${deltaHtml}</td>
         <td class="py-2.5 px-2">
-          <div class="text-chalk truncate max-w-[150px] sm:max-w-none font-medium">${p.name}</div>
+          <div class="text-chalk truncate max-w-[150px] sm:max-w-none font-medium">${p.name || 'Peserta'}</div>
         </td>
-        <td class="py-2.5 px-2 text-right font-mono text-chalk">${formatRupiah(p.current_value)}</td>
+        <td class="py-2.5 px-2 text-right font-mono text-chalk">${formatRupiah(currentVal)}</td>
         <td class="py-2.5 px-1 text-right font-mono ${returnColor}">${returnSign}</td>
         <td class="py-2.5 px-1 text-right font-mono text-smoke">${mddPct}</td>
       </tr>
@@ -542,19 +586,19 @@ function renderLeaderboard() {
 function updateCharts() {
   if (!gameState || !chartTopPlayers || !chartAssetIndexes) return;
 
-  const currentRound = gameState.current_round;
+  const currentRound = gameState.current_round || 0;
   const labels = ['Awal'];
   for (let r = 1; r <= currentRound; r++) {
     labels.push(`K${r}`);
   }
 
   // Top 5 Players
-  const top5 = gameState.leaderboard_top10.slice(0, 5);
+  const top5 = (gameState.leaderboard_top10 || []).slice(0, 5);
   const lineColors = ['#f3f3f3', '#8fb3d9', '#8fd9a8', '#d9c38f', '#b38fd9'];
 
   const playerDatasets = top5.map((p, idx) => ({
-    label: p.name,
-    data: p.history.map(h => h.value),
+    label: p.name || `P${idx + 1}`,
+    data: (p.history && Array.isArray(p.history)) ? p.history.map(h => (h && h.value != null ? h.value : 100000000)) : [],
     borderColor: lineColors[idx % lineColors.length],
     backgroundColor: lineColors[idx % lineColors.length],
     tension: 0.2,

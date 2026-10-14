@@ -116,7 +116,10 @@ function getPublicState(state, config) {
   delete cleanConfig.admin;
   const sorted = getLeaderboard(state);
   const maxDdLimit = config.max_drawdown_award || 0.10;
-  const tangguh = sorted.filter(p => (p.max_drawdown || 0) <= maxDdLimit).slice(0, 5);
+  let tangguh = sorted.filter(p => (p.max_drawdown || 0) <= maxDdLimit).slice(0, 5);
+  if (tangguh.length === 0 && sorted.length > 0) {
+    tangguh = [...sorted].sort((a, b) => ((a.max_drawdown || 0) - (b.max_drawdown || 0)) || (b.current_value - a.current_value)).slice(0, 5);
+  }
 
   return {
     status: state.status || 'WAITING_STAGE_1',
