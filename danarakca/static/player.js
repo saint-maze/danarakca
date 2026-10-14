@@ -44,52 +44,56 @@ function renderInstantCardPreview(round, card) {
   if (narrEl) narrEl.innerText = card.narration || '';
 }
 
-function handleRealtimeEvent(msg) {
+function isStaleRealtimeEvent(msg, sentAtSec) {
+  // ntfy replays cached messages when EventSource reconnects (Last-Event-ID), e.g. after a phone unlocks.
+  if (sentAtSec && (Date.now() / 1000 - sentAtSec) > 60) return true;
+  if (!gameState) return false;
+  const curSess = gameState.session_id || 0;
+  const msgSess = msg.session_id || 0;
+  if (msg.event === 'GAME_RESET') return msgSess <= curSess;
+  return msgSess !== curSess;
+}
+
+function handleRealtimeEvent(msg, sentAtSec) {
   if (!msg || !msg.event) return;
+  if (isStaleRealtimeEvent(msg, sentAtSec)) return;
 
   if (msg.event === 'CARD_DRAWN') {
     const round = msg.round || msg.current_round;
     const card = msg.card || (msg.card_entry && msg.card_entry.card);
 
-    if (round && round <= lastProcessedCardRound) return;
-    if (round) lastProcessedCardRound = round;
+    if (!round || round <= lastProcessedCardRound) return;
+    if (gameState && round <= (gameState.current_round || 0)) return;
+    lastProcessedCardRound = round;
 
-    // 1. Instantly display drawn card with zero delay
     if (card) {
       renderInstantCardPreview(round, card);
     }
 
-    // 2. Immediately update header badge
-    if (round) {
-      const total = gameState ? gameState.total_rounds : 30;
-      const stage = msg.stage || (gameState ? gameState.current_stage : 1);
-      const headerRound = document.getElementById('headerRoundInfo');
-      if (headerRound) headerRound.innerText = `Putaran ${round}/${total} · Tahap ${stage}`;
-    }
+    const total = gameState ? gameState.total_rounds : 30;
+    const stage = msg.stage || (gameState ? gameState.current_stage : 1);
+    const headerRound = document.getElementById('headerRoundInfo');
+    if (headerRound) headerRound.innerText = `Putaran ${round}/${total} · Tahap ${stage}`;
 
-    // 3. Immediately close allocation banner if card was drawn
     if (gameState) {
       gameState.stage_input_open = false;
       gameState.current_round = round;
       updateStageInputStatus();
     }
 
-    // 4. Subtle haptic pulse
     if (navigator.vibrate) {
       try { navigator.vibrate([25, 40, 25]); } catch (e) {}
     }
 
-    // 5. Instantly trigger background sync for updated portfolio balance and rank
     fetchStateAndParticipant();
   } else if (msg.event === 'STAGE_INPUT_TOGGLED') {
-    if (gameState) {
+    if (gameState && (msg.current_stage || 0) >= gameState.current_stage) {
       gameState.stage_input_open = Boolean(msg.stage_input_open);
-      if (msg.current_stage) gameState.current_stage = msg.current_stage;
       updateStageInputStatus();
     }
     fetchStateAndParticipant();
   } else if (msg.event === 'STAGE_ADVANCED') {
-    if (gameState) {
+    if (gameState && (msg.current_stage || 0) > gameState.current_stage) {
       gameState.current_stage = msg.current_stage;
       gameState.stage_input_open = true;
       updateHeaderRoundInfo();
@@ -110,13 +114,13 @@ function initRealtimeStream(channel) {
   }
   currentLiveChannel = targetChannel;
   try {
-    liveEventSource = new EventSource(`https://ntfy.sh/${targetChannel}/sse`);
+    liveEventSource = new EventSource(`https://ntfy.sh/${targetChannel}/sse?since=now`);
     liveEventSource.onmessage = (e) => {
       try {
         const raw = JSON.parse(e.data);
         if (raw.event !== 'message' || !raw.message) return;
         const msg = typeof raw.message === 'string' ? JSON.parse(raw.message) : raw.message;
-        handleRealtimeEvent(msg);
+        handleRealtimeEvent(msg, raw.time);
       } catch (err) {}
     };
   } catch (err) {
@@ -275,6 +279,11 @@ function closePlayerModal() {
 
 function confirmLogoutAction() {
   closePlayerModal();
+  clearPlayerSession();
+  showLogin();
+}
+
+function clearPlayerSession() {
   localStorage.removeItem('danarakca_code');
   localStorage.removeItem('danarakca_name');
   localStorage.removeItem('danarakca_allocations');
@@ -282,8 +291,22 @@ function confirmLogoutAction() {
   currentUser = null;
   participantData = null;
   savedAllocations = {};
+  allocation = { sukuk: 20, saham: 20, rdpu: 20, emas: 20, campuran: 20 };
+  userIsEditing = false;
   lastLoadedStage = null;
+}
+
+// Facilitator reset without keeping participants: the previous roster is gone, so send the player back to login.
+function forceRelogin(newState) {
+  if (!currentUser) return;
+  const prevName = currentUser.name;
+  clearPlayerSession();
+  if (newState) gameState = newState;
+  lastProcessedCardRound = -1;
   showLogin();
+  const inputEl = document.getElementById('inputName');
+  if (inputEl) inputEl.value = prevName || '';
+  showToast('Permainan baru telah dimulai. Silakan masuk kembali untuk bergabung.', 'info');
 }
 
 function applyPlayerSyncResponse(newState, newParticipant, force = false) {
@@ -294,6 +317,9 @@ function applyPlayerSyncResponse(newState, newParticipant, force = false) {
     const curVer = gameState ? (gameState.state_version || 0) : 0;
     const newVer = newState.state_version || 0;
 
+    // Sessions only increase; an older one comes from a lagging container and would show a wrong stage.
+    if (curSess > 0 && newSess < curSess) return;
+
     // Detect game reset by Facilitator
     if (curSess > 0 && newSess > curSess) {
       savedAllocations = {};
@@ -302,6 +328,7 @@ function applyPlayerSyncResponse(newState, newParticipant, force = false) {
       allocation = { sukuk: 20, saham: 20, rdpu: 20, emas: 20, campuran: 20 };
       userIsEditing = false;
       lastLoadedStage = null;
+      lastProcessedCardRound = -1;
       gameState = newState;
     } else if (!force && gameState && newSess === curSess && newVer < curVer) {
       // Ignore stale response from lagging container
@@ -337,6 +364,7 @@ function applyPlayerSyncResponse(newState, newParticipant, force = false) {
 // 2. Fetch Data (Single Atomic Sync Request)
 async function fetchStateAndParticipant() {
   if (!currentUser || submitInFlight) return;
+  const sentName = currentUser.name;
 
   try {
     const res = await fetch('/api/player/sync', {
@@ -349,6 +377,11 @@ async function fetchStateAndParticipant() {
       })
     });
     const json = await res.json();
+    if (!currentUser || currentUser.name !== sentName) return;
+    if (json.success && json.data && json.data.session_expired) {
+      forceRelogin(json.data.state);
+      return;
+    }
     if (json.success && json.data && !submitInFlight) {
       applyPlayerSyncResponse(json.data.state, json.data.participant, false);
     }
@@ -672,6 +705,8 @@ async function handleAllocationSubmit(e) {
       userIsEditing = false;
       lastLoadedStage = gameState.current_stage;
       applyPlayerSyncResponse(json.state, json.participant, true);
+    } else if (json.session_expired) {
+      forceRelogin(null);
     } else {
       showToast(json.error || 'Gagal menyimpan alokasi', 'error');
     }

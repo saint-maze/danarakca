@@ -33,7 +33,7 @@ function initFacilitatorRealtimeStream() {
     try { facilitatorEventSource.close(); } catch (e) {}
   }
   try {
-    facilitatorEventSource = new EventSource(`https://ntfy.sh/${channel}/sse`);
+    facilitatorEventSource = new EventSource(`https://ntfy.sh/${channel}/sse?since=now`);
     facilitatorEventSource.onmessage = (e) => {
       try {
         const raw = JSON.parse(e.data);
@@ -369,18 +369,23 @@ function renderUI() {
     btnToggle.classList.add('opacity-60');
   }
 
-  // Next Stage Button: enabled as long as currentStage < total_stages
+  // Next Stage Button: only enabled when all rounds of current stage are completed AND currentStage < total_stages
   const btnNextStage = document.getElementById('btnNextStage');
   const btnNextStageText = document.getElementById('btnNextStageText');
   const currentStage = gameState.current_stage;
-  const roundsPerStage = gameState.rounds_per_stage;
+  const roundsPerStage = gameState.rounds_per_stage || 10;
+  const stageRoundsFinished = round >= (currentStage * roundsPerStage);
 
-  if (currentStage < gameState.total_stages) {
-    btnNextStage.disabled = false;
-    btnNextStageText.innerText = `Maju ke Tahap ${currentStage + 1}`;
-  } else {
+  if (currentStage >= gameState.total_stages) {
     btnNextStage.disabled = true;
     btnNextStageText.innerText = 'Tahap Akhir';
+  } else if (!stageRoundsFinished) {
+    btnNextStage.disabled = true;
+    const roundsInCurrentStage = Math.max(0, round - ((currentStage - 1) * roundsPerStage));
+    btnNextStageText.innerText = `Maju ke Tahap ${currentStage + 1} (${roundsInCurrentStage}/${roundsPerStage} Putaran)`;
+  } else {
+    btnNextStage.disabled = false;
+    btnNextStageText.innerText = `Maju ke Tahap ${currentStage + 1} ↗`;
   }
 
   // Update Booth Mode Buttons (1, 2, or 3 Stages)
@@ -711,13 +716,23 @@ async function advanceStage() {
 }
 
 function updateModeButtonsUI(totalStages) {
+  const currentStage = gameState ? gameState.current_stage : 1;
   [1, 2, 3].forEach(m => {
     const btn = document.getElementById(`btnMode${m}`);
     if (!btn) return;
-    if (m === totalStages) {
+    const isLocked = m < currentStage;
+    if (isLocked) {
+      btn.disabled = true;
+      btn.className = 'px-2.5 sm:px-3.5 h-full flex items-center justify-center cursor-not-allowed opacity-30 bg-obsidian text-smoke text-xs sm:text-caption';
+      btn.title = `Tahap ${m} sudah terlewati`;
+    } else if (m === totalStages) {
+      btn.disabled = false;
       btn.className = 'px-2.5 sm:px-3.5 h-full flex items-center justify-center transition-all cursor-pointer bg-chalk text-obsidian font-semibold text-xs sm:text-caption shadow-sm';
+      btn.title = `Mode ${m} Tahap aktif`;
     } else {
+      btn.disabled = false;
       btn.className = 'px-2.5 sm:px-3.5 h-full flex items-center justify-center transition-all cursor-pointer bg-obsidian text-smoke hover:text-chalk hover:bg-carbon text-xs sm:text-caption';
+      btn.title = `Ubah ke Mode ${m} Tahap`;
     }
   });
 }
@@ -726,8 +741,13 @@ async function setGameMode(stages) {
   stages = parseInt(stages, 10);
   if (![1, 2, 3].includes(stages)) return;
 
+  if (gameState && stages < gameState.current_stage) {
+    showToast(`Tidak bisa ubah ke ${stages} Tahap karena sedang berada di Tahap ${gameState.current_stage}`, 'error');
+    return;
+  }
+
   const targetRounds = stages * (gameState?.rounds_per_stage || 10);
-  if (gameState && gameState.current_round > targetRounds) {
+  if (gameState && gameState.current_round > 0 && gameState.current_round >= targetRounds) {
     const ok = confirm(`Putaran saat ini (${gameState.current_round}) melebihi batas ${stages} Tahap (${targetRounds} Putaran).\n\nMengubah mode sekarang akan langsung menyelesaikan simulasi. Lanjutkan?`);
     if (!ok) return;
   }

@@ -220,6 +220,15 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
                 p_info = body.get('participant_sync') or {}
                 name = (p_info.get('name') or body.get('name') or '').strip()
                 code = (p_info.get('code') or body.get('code') or '').strip()
+                if name and engine.is_participant_session_expired(name, p_info.get('session_id')):
+                    return self.send_json({
+                        'success': True,
+                        'data': {
+                            'state': engine.get_public_state(),
+                            'participant': None,
+                            'session_expired': True
+                        }
+                    })
                 p = None
                 if name:
                     p = engine.register_participant(name=name, code=code)
@@ -242,6 +251,13 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
             elif path == '/api/participant/submit':
                 code_or_name = body.get('code') or body.get('name')
                 name = body.get('name')
+                p_sess = (body.get('participant_sync') or {}).get('session_id')
+                if name and engine.is_participant_session_expired(name, p_sess):
+                    return self.send_json({
+                        'success': False,
+                        'session_expired': True,
+                        'error': 'Permainan baru telah dimulai. Silakan daftar ulang.'
+                    }, status=409)
                 stage = body.get('stage')
                 allocation = body.get('allocation')
                 alloc = engine.submit_allocation(code_or_name, stage, allocation, name=name)

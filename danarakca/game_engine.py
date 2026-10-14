@@ -107,11 +107,16 @@ class GameEngine:
                 if isinstance(val, dict):
                     return val
         except Exception as e:
+            self._redis_read_failed = True
             print(f"Redis get error: {e}")
         return None
 
     def _save_to_redis(self):
         if not self.redis_url or not self.redis_token:
+            return
+        # If the Redis read failed this request, self.state is a stale local fallback; writing it would
+        # roll back the shared game (e.g. jump stages or resurrect a finished round).
+        if getattr(self, '_redis_read_failed', False):
             return
         import urllib.request
         try:
@@ -139,6 +144,7 @@ class GameEngine:
             self.config = json.load(f)
 
     def refresh_state(self):
+        self._redis_read_failed = False
         # 1. Try Upstash Redis if configured
         if self.redis_url and self.redis_token:
             redis_state = self._load_from_redis()
@@ -466,39 +472,50 @@ class GameEngine:
             # Only restore participant allocations if they belong to the current session (or if player just registered)
             session_matches = (p_sess == cur_session) or (p_sess == 0) or (cur_session <= 1)
 
-            if det_code not in self.state['participants']:
-                # If facilitator explicitly reset with preserve_participants=False and player has an older session_id,
-                # still keep the player registered so they don't get logged out, but clear old session allocations!
-                self.state['participants'][det_code] = {
-                    'code': det_code,
-                    'name': name,
-                    'allocations': {},
-                    'current_value': self.config['initial_capital'],
-                    'prev_value': self.config['initial_capital'],
-                    'current_rank': 1,
-                    'prev_rank': 1,
-                    'max_drawdown': 0.0,
-                    'history': []
-                }
-                changed = True
+            # Players left over from a game that was reset without preserving participants must re-register.
+            if not self.is_participant_session_expired(name, p_sess):
+                if det_code not in self.state['participants']:
+                    self.state['participants'][det_code] = {
+                        'code': det_code,
+                        'name': name,
+                        'allocations': {},
+                        'current_value': self.config['initial_capital'],
+                        'prev_value': self.config['initial_capital'],
+                        'current_rank': 1,
+                        'prev_rank': 1,
+                        'max_drawdown': 0.0,
+                        'history': []
+                    }
+                    changed = True
 
-            if session_matches and isinstance(participant_sync.get('allocations'), dict):
-                cur_allocs = self.state['participants'][det_code].setdefault('allocations', {})
-                for stg, alloc in participant_sync['allocations'].items():
-                    if isinstance(alloc, dict) and cur_allocs.get(str(stg)) != alloc:
-                        cur_allocs[str(stg)] = alloc
-                        changed = True
+                if session_matches and isinstance(participant_sync.get('allocations'), dict):
+                    cur_allocs = self.state['participants'][det_code].setdefault('allocations', {})
+                    for stg, alloc in participant_sync['allocations'].items():
+                        if isinstance(alloc, dict) and cur_allocs.get(str(stg)) != alloc:
+                            cur_allocs[str(stg)] = alloc
+                            changed = True
 
-            if changed:
-                self._rebuild_simulation()
+                if changed:
+                    self._rebuild_simulation()
 
         if changed:
             self.save_state(bump_version=False)
+
+    def is_participant_session_expired(self, name, session_id):
+        """True when a player from an earlier session is no longer in the roster (reset without preserve)."""
+        p_sess = int(session_id or 0)
+        cur_session = int(self.state.get('session_id', 1))
+        if not p_sess or p_sess >= cur_session:
+            return False
+        return self.make_participant_code(name) not in self.state.get('participants', {})
 
     def set_game_mode(self, total_stages):
         total_stages = int(total_stages)
         if total_stages not in (1, 2, 3):
             raise ValueError("Mode tahap harus 1, 2, atau 3 tahap")
+
+        if total_stages < self.state.get('current_stage', 1):
+            raise ValueError(f"Tidak dapat mengubah ke {total_stages} Tahap karena permainan sudah berada di Tahap {self.state.get('current_stage', 1)}")
 
         rounds_per_stage = self.state.get('rounds_per_stage', 10)
         new_total_rounds = total_stages * rounds_per_stage
@@ -638,6 +655,11 @@ class GameEngine:
     def next_stage(self):
         if self.state['current_stage'] >= self.state['total_stages']:
             raise ValueError("Sudah mencapai tahap terakhir")
+
+        rounds_per_stage = self.state.get('rounds_per_stage', 10)
+        required_rounds = self.state['current_stage'] * rounds_per_stage
+        if self.state['current_round'] < required_rounds:
+            raise ValueError(f"Selesaikan putaran Tahap {self.state['current_stage']} ({required_rounds} putaran) sebelum memajukan tahap.")
 
         self.state['current_stage'] += 1
         self.state['stage_input_open'] = True
