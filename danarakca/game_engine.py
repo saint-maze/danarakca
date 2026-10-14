@@ -3,10 +3,14 @@ import random
 import os
 import copy
 import hashlib
+import time
+import threading
 from datetime import datetime
 
 class GameEngine:
     def __init__(self, data_dir=None):
+        self.lock = threading.RLock()
+        self._last_refresh_time = 0.0
         if data_dir is None:
             data_dir = os.path.join(os.path.dirname(__file__), 'data')
         self.data_dir = data_dir
@@ -150,73 +154,80 @@ class GameEngine:
         with open(self.config_file, 'r', encoding='utf-8') as f:
             self.config = json.load(f)
 
-    def refresh_state(self):
-        self._redis_read_failed = False
-        loaded = None
-
-        # 1. Try Upstash Redis if configured
-        if self.redis_url and self.redis_token:
-            redis_state = self._load_from_redis()
-            if isinstance(redis_state, dict):
-                loaded = redis_state
-
-        # 2. Try state file (local or /tmp) if redis not loaded
-        if not loaded and os.path.exists(self.state_file):
-            try:
-                with open(self.state_file, 'r', encoding='utf-8') as f:
-                    file_state = json.load(f)
-                if isinstance(file_state, dict):
-                    loaded = file_state
-            except Exception as e:
-                print(f"Error loading state file: {e}")
-
-        if not loaded:
-            return False
-
-        if not hasattr(self, 'state') or not isinstance(self.state, dict):
-            self.state = loaded
+    def refresh_state(self, force=False):
+        now = time.time()
+        if not force and hasattr(self, '_last_refresh_time') and (now - self._last_refresh_time < 0.75) and hasattr(self, 'state') and isinstance(self.state, dict):
             return True
 
-        file_sess = int(loaded.get('session_id', 0))
-        mem_sess = int(self.state.get('session_id', 0))
-        file_ver = int(loaded.get('state_version', 0))
-        mem_ver = int(self.state.get('state_version', 0))
+        with self.lock:
+            self._redis_read_failed = False
+            loaded = None
 
-        if file_sess > mem_sess:
-            self.state = loaded
+            # 1. Try Upstash Redis if configured
+            if self.redis_url and self.redis_token:
+                redis_state = self._load_from_redis()
+                if isinstance(redis_state, dict):
+                    loaded = redis_state
+
+            # 2. Try state file (local or /tmp) if redis not loaded
+            if not loaded and os.path.exists(self.state_file):
+                try:
+                    with open(self.state_file, 'r', encoding='utf-8') as f:
+                        file_state = json.load(f)
+                    if isinstance(file_state, dict):
+                        loaded = file_state
+                except Exception:
+                    pass
+
+            if not loaded:
+                return hasattr(self, 'state') and isinstance(self.state, dict)
+
+            self._last_refresh_time = time.time()
+
+            if not hasattr(self, 'state') or not isinstance(self.state, dict):
+                self.state = loaded
+                return True
+
+            file_sess = int(loaded.get('session_id', 0))
+            mem_sess = int(self.state.get('session_id', 0))
+            file_ver = int(loaded.get('state_version', 0))
+            mem_ver = int(self.state.get('state_version', 0))
+
+            if file_sess > mem_sess:
+                self.state = loaded
+                return True
+            elif file_sess < mem_sess:
+                return True
+
+            # Same session: merge participants and drawn cards to prevent participant loss or round rollback
+            mem_participants = self.state.get('participants', {})
+            loaded_participants = loaded.get('participants', {})
+            mem_cards = self.state.get('drawn_cards', [])
+            loaded_cards = loaded.get('drawn_cards', [])
+
+            merged_participants = dict(loaded_participants)
+            for code, p in mem_participants.items():
+                if code not in merged_participants:
+                    merged_participants[code] = p
+                elif isinstance(p.get('allocations'), dict):
+                    cur_allocs = merged_participants[code].setdefault('allocations', {})
+                    for stg, alloc in p['allocations'].items():
+                        if stg not in cur_allocs and isinstance(alloc, dict):
+                            cur_allocs[stg] = alloc
+
+            if file_ver >= mem_ver:
+                self.state = loaded
+                self.state['participants'] = merged_participants
+                if len(mem_cards) > len(loaded_cards):
+                    self.state['drawn_cards'] = mem_cards
+                    self.state['current_round'] = len(mem_cards)
+            else:
+                self.state['participants'] = merged_participants
+                if len(loaded_cards) > len(mem_cards):
+                    self.state['drawn_cards'] = loaded_cards
+                    self.state['current_round'] = len(loaded_cards)
+
             return True
-        elif file_sess < mem_sess:
-            return True
-
-        # Same session: merge participants and drawn cards to prevent participant loss or round rollback
-        mem_participants = self.state.get('participants', {})
-        loaded_participants = loaded.get('participants', {})
-        mem_cards = self.state.get('drawn_cards', [])
-        loaded_cards = loaded.get('drawn_cards', [])
-
-        merged_participants = dict(loaded_participants)
-        for code, p in mem_participants.items():
-            if code not in merged_participants:
-                merged_participants[code] = p
-            elif isinstance(p.get('allocations'), dict):
-                cur_allocs = merged_participants[code].setdefault('allocations', {})
-                for stg, alloc in p['allocations'].items():
-                    if stg not in cur_allocs and isinstance(alloc, dict):
-                        cur_allocs[stg] = alloc
-
-        if file_ver >= mem_ver:
-            self.state = loaded
-            self.state['participants'] = merged_participants
-            if len(mem_cards) > len(loaded_cards):
-                self.state['drawn_cards'] = mem_cards
-                self.state['current_round'] = len(mem_cards)
-        else:
-            self.state['participants'] = merged_participants
-            if len(loaded_cards) > len(mem_cards):
-                self.state['drawn_cards'] = loaded_cards
-                self.state['current_round'] = len(loaded_cards)
-
-        return True
 
     def load_or_init_state(self):
         if not self.refresh_state():
@@ -233,26 +244,36 @@ class GameEngine:
         self.state['state_version'] = max(cur_ver + 1, now_ms)
 
     def save_state(self, bump_version=True):
-        if bump_version:
-            self._bump_version()
-        try:
-            with open(self.state_file, 'w', encoding='utf-8') as f:
-                json.dump(self.state, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"Warning: could not write local state file ({e})")
+        with self.lock:
+            if bump_version:
+                self._bump_version()
+            tmp_file = f"{self.state_file}.tmp.{os.getpid()}"
+            try:
+                with open(tmp_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.state, f, ensure_ascii=False, indent=2)
+                    f.flush()
+                os.replace(tmp_file, self.state_file)
+            except Exception as e:
+                try:
+                    if os.path.exists(tmp_file):
+                        os.remove(tmp_file)
+                except Exception:
+                    pass
 
-        # Sync to Upstash Redis if available
-        self._save_to_redis()
+            # Sync to Upstash Redis if available
+            self._save_to_redis()
+            self._last_refresh_time = time.time()
 
     def reset_game(self, preserve_participants=False, total_stages=None):
-        if total_stages is None:
-            if hasattr(self, 'state') and isinstance(self.state, dict) and 'total_stages' in self.state:
-                total_stages = self.state['total_stages']
-            else:
-                total_stages = self.config.get('total_stages', 3)
-        total_stages = int(total_stages)
-        if total_stages not in (1, 2, 3):
-            total_stages = 3
+        with self.lock:
+            if total_stages is None:
+                if hasattr(self, 'state') and isinstance(self.state, dict) and 'total_stages' in self.state:
+                    total_stages = self.state['total_stages']
+                else:
+                    total_stages = self.config.get('total_stages', 3)
+            total_stages = int(total_stages)
+            if total_stages not in (1, 2, 3):
+                total_stages = 3
 
         rounds_per_stage = self.config.get('rounds_per_stage', 10)
         total_rounds = total_stages * rounds_per_stage
@@ -424,9 +445,10 @@ class GameEngine:
 
     def sync_state(self, client_sync=None, participant_sync=None):
         """Synchronizes state across stateless serverless containers using monotonic session_id and state_version."""
-        changed = False
-        cur_session = int(self.state.get('session_id', 1))
-        cur_version = int(self.state.get('state_version', 1))
+        with self.lock:
+            changed = False
+            cur_session = int(self.state.get('session_id', 1))
+            cur_version = int(self.state.get('state_version', 1))
 
         if isinstance(client_sync, dict) and client_sync:
             inc_session = int(client_sync.get('session_id') or 0)
@@ -588,82 +610,84 @@ class GameEngine:
         }
 
     def register_participant(self, name, code=None):
-        name = (name or '').strip()
-        if not name:
-            raise ValueError("Nama peserta / tim tidak boleh kosong")
+        with self.lock:
+            name = (name or '').strip()
+            if not name:
+                raise ValueError("Nama peserta / tim tidak boleh kosong")
 
-        # Check if participant already exists by name (case-insensitive)
-        for existing_code, p in list(self.state['participants'].items()):
-            if p['name'].strip().lower() == name.lower():
-                return p
+            # Check if participant already exists by name (case-insensitive)
+            for existing_code, p in list(self.state['participants'].items()):
+                if p['name'].strip().lower() == name.lower():
+                    return p
 
-        det_code = self.make_participant_code(name)
-        if det_code in self.state['participants']:
+            det_code = self.make_participant_code(name)
+            if det_code in self.state['participants']:
+                return self.state['participants'][det_code]
+
+            self.state['participants'][det_code] = {
+                'code': det_code,
+                'name': name,
+                'allocations': {},
+                'current_value': self.config['initial_capital'],
+                'prev_value': self.config['initial_capital'],
+                'current_rank': len(self.state['participants']) + 1,
+                'prev_rank': len(self.state['participants']) + 1,
+                'max_drawdown': 0.0,
+                'history': []
+            }
+
+            self._rebuild_simulation()
+            self.save_state()
             return self.state['participants'][det_code]
 
-        self.state['participants'][det_code] = {
-            'code': det_code,
-            'name': name,
-            'allocations': {},
-            'current_value': self.config['initial_capital'],
-            'prev_value': self.config['initial_capital'],
-            'current_rank': len(self.state['participants']) + 1,
-            'prev_rank': len(self.state['participants']) + 1,
-            'max_drawdown': 0.0,
-            'history': []
-        }
-
-        self._rebuild_simulation()
-        self.save_state()
-        return self.state['participants'][det_code]
-
     def submit_allocation(self, code_or_name, stage, allocation, name=None):
-        key = str(code_or_name or name or '').strip()
-        p = self.state['participants'].get(key.upper())
-        if not p:
-            for existing in self.state['participants'].values():
-                if existing['name'].strip().lower() == key.lower() or existing['code'].lower() == key.lower():
-                    p = existing
-                    break
-        if not p and name:
-            for existing in self.state['participants'].values():
-                if existing['name'].strip().lower() == str(name).strip().lower():
-                    p = existing
-                    break
-        if not p:
-            # Self-heal on serverless container: auto-register participant instead of failing
-            reg_name = (name or key).strip()
-            if not reg_name:
-                raise ValueError("Nama peserta tidak valid")
-            p = self.register_participant(name=reg_name)
+        with self.lock:
+            key = str(code_or_name or name or '').strip()
+            p = self.state['participants'].get(key.upper())
+            if not p:
+                for existing in list(self.state['participants'].values()):
+                    if existing['name'].strip().lower() == key.lower() or existing['code'].lower() == key.lower():
+                        p = existing
+                        break
+            if not p and name:
+                for existing in list(self.state['participants'].values()):
+                    if existing['name'].strip().lower() == str(name).strip().lower():
+                        p = existing
+                        break
+            if not p:
+                # Self-heal on serverless container: auto-register participant instead of failing
+                reg_name = (name or key).strip()
+                if not reg_name:
+                    raise ValueError("Nama peserta tidak valid")
+                p = self.register_participant(name=reg_name)
 
-        code = p['code']
+            code = p['code']
 
-        stage = int(stage)
-        if stage != self.state['current_stage']:
-            raise ValueError(f"Saat ini bukan waktu pengisian Tahap {stage} (Tahap aktif: {self.state['current_stage']})")
+            stage = int(stage)
+            if stage != self.state['current_stage']:
+                raise ValueError(f"Saat ini bukan waktu pengisian Tahap {stage} (Tahap aktif: {self.state['current_stage']})")
 
-        if not self.state['stage_input_open']:
-            raise ValueError(f"Input alokasi Tahap {stage} sudah ditutup oleh Fasilitator")
+            if not self.state['stage_input_open']:
+                raise ValueError(f"Input alokasi Tahap {stage} sudah ditutup oleh Fasilitator")
 
-        # Validate allocation
-        assets = ['sukuk', 'saham', 'rdpu', 'emas', 'campuran']
-        clean_alloc = {}
-        total = 0
-        for a in assets:
-            val = float(allocation.get(a, 0))
-            if val < 0 or val > 100:
-                raise ValueError(f"Alokasi untuk {a} harus antara 0 dan 100")
-            clean_alloc[a] = val
-            total += val
+            # Validate allocation
+            assets = ['sukuk', 'saham', 'rdpu', 'emas', 'campuran']
+            clean_alloc = {}
+            total = 0
+            for a in assets:
+                val = float(allocation.get(a, 0))
+                if val < 0 or val > 100:
+                    raise ValueError(f"Alokasi untuk {a} harus antara 0 dan 100")
+                clean_alloc[a] = val
+                total += val
 
-        if round(total) != 100:
-            raise ValueError(f"Total alokasi harus tepat 100% (saat ini {round(total)}%)")
+            if round(total) != 100:
+                raise ValueError(f"Total alokasi harus tepat 100% (saat ini {round(total)}%)")
 
-        self.state['participants'][code]['allocations'][str(stage)] = clean_alloc
-        self._rebuild_simulation()
-        self.save_state()
-        return clean_alloc
+            self.state['participants'][code]['allocations'][str(stage)] = clean_alloc
+            self._rebuild_simulation()
+            self.save_state()
+            return clean_alloc
 
     def get_effective_allocation(self, code, stage):
         p = self.state['participants'].get(code)
@@ -682,138 +706,141 @@ class GameEngine:
         return {'sukuk': 20.0, 'saham': 20.0, 'rdpu': 20.0, 'emas': 20.0, 'campuran': 20.0}
 
     def toggle_stage_input(self, open_status=None):
-        if open_status is None:
-            self.state['stage_input_open'] = not self.state['stage_input_open']
-        else:
-            self.state['stage_input_open'] = bool(open_status)
+        with self.lock:
+            if open_status is None:
+                self.state['stage_input_open'] = not self.state['stage_input_open']
+            else:
+                self.state['stage_input_open'] = bool(open_status)
 
-        status_text = "dibuka" if self.state['stage_input_open'] else "ditutup"
-        self.state['message'] = f"Input alokasi Tahap {self.state['current_stage']} telah {status_text}."
-        self.save_state()
-        self._publish_live_event('STAGE_INPUT_TOGGLED', {
-            'stage_input_open': self.state['stage_input_open'],
-            'current_stage': self.state['current_stage'],
-            'message': self.state['message']
-        })
-        return self.state['stage_input_open']
+            status_text = "dibuka" if self.state['stage_input_open'] else "ditutup"
+            self.state['message'] = f"Input alokasi Tahap {self.state['current_stage']} telah {status_text}."
+            self.save_state()
+            self._publish_live_event('STAGE_INPUT_TOGGLED', {
+                'stage_input_open': self.state['stage_input_open'],
+                'current_stage': self.state['current_stage'],
+                'message': self.state['message']
+            })
+            return self.state['stage_input_open']
 
     def next_stage(self):
-        if self.state['current_stage'] >= self.state['total_stages']:
-            raise ValueError("Sudah mencapai tahap terakhir")
+        with self.lock:
+            if self.state['current_stage'] >= self.state['total_stages']:
+                raise ValueError("Sudah mencapai tahap terakhir")
 
-        rounds_per_stage = self.state.get('rounds_per_stage', 10)
-        required_rounds = self.state['current_stage'] * rounds_per_stage
-        if self.state['current_round'] < required_rounds:
-            raise ValueError(f"Selesaikan putaran Tahap {self.state['current_stage']} ({required_rounds} putaran) sebelum memajukan tahap.")
+            rounds_per_stage = self.state.get('rounds_per_stage', 10)
+            required_rounds = self.state['current_stage'] * rounds_per_stage
+            if self.state['current_round'] < required_rounds:
+                raise ValueError(f"Selesaikan putaran Tahap {self.state['current_stage']} ({required_rounds} putaran) sebelum memajukan tahap.")
 
-        self.state['current_stage'] += 1
-        self.state['stage_input_open'] = True
+            self.state['current_stage'] += 1
+            self.state['stage_input_open'] = True
 
-        # Pre-populate next stage allocations from previous stage if not set
-        curr_stage_str = str(self.state['current_stage'])
-        for p in self.state['participants'].values():
-            if 'allocations' in p and curr_stage_str not in p['allocations']:
-                prev_alloc = self.get_effective_allocation(p['code'], self.state['current_stage'] - 1)
-                p['allocations'][curr_stage_str] = dict(prev_alloc)
+            # Pre-populate next stage allocations from previous stage if not set
+            curr_stage_str = str(self.state['current_stage'])
+            for p in list(self.state['participants'].values()):
+                if 'allocations' in p and curr_stage_str not in p['allocations']:
+                    prev_alloc = self.get_effective_allocation(p['code'], self.state['current_stage'] - 1)
+                    p['allocations'][curr_stage_str] = dict(prev_alloc)
 
-        self.state['message'] = f"Memasuki Tahap {self.state['current_stage']}. Sesi perubahan alokasi dibuka!"
-        self.save_state()
-        self._publish_live_event('STAGE_ADVANCED', {
-            'current_stage': self.state['current_stage'],
-            'stage_input_open': self.state['stage_input_open'],
-            'message': self.state['message']
-        })
-        return self.state['current_stage']
+            self.state['message'] = f"Memasuki Tahap {self.state['current_stage']}. Sesi perubahan alokasi dibuka!"
+            self.save_state()
+            self._publish_live_event('STAGE_ADVANCED', {
+                'current_stage': self.state['current_stage'],
+                'stage_input_open': self.state['stage_input_open'],
+                'message': self.state['message']
+            })
+            return self.state['current_stage']
 
     def draw_card(self, card_id=None):
-        if self.state['current_round'] >= self.state['total_rounds']:
-            raise ValueError("Semua putaran telah selesai")
+        with self.lock:
+            if self.state['current_round'] >= self.state['total_rounds']:
+                raise ValueError("Semua putaran telah selesai")
 
-        # Determine expected stage for this round
-        next_round = self.state['current_round'] + 1
-        expected_stage = 1 + (next_round - 1) // self.state['rounds_per_stage']
+            # Determine expected stage for this round
+            next_round = self.state['current_round'] + 1
+            expected_stage = 1 + (next_round - 1) // self.state['rounds_per_stage']
 
-        if self.state['current_stage'] < expected_stage:
-            raise ValueError(f"Perlu memajukan Tahap ke {expected_stage} terlebih dahulu sebelum memainkan putaran {next_round}")
+            if self.state['current_stage'] < expected_stage:
+                raise ValueError(f"Perlu memajukan Tahap ke {expected_stage} terlebih dahulu sebelum memainkan putaran {next_round}")
 
-        # Check if stage input is still open; auto-close it when card is drawn
-        if self.state['stage_input_open']:
-            self.state['stage_input_open'] = False
+            # Check if stage input is still open; auto-close it when card is drawn
+            if self.state['stage_input_open']:
+                self.state['stage_input_open'] = False
 
-        # Pick card
-        if card_id:
-            if card_id not in self.cards_by_id:
-                raise ValueError(f"Card ID {card_id} tidak valid")
-            selected_card = self.cards_by_id[card_id]
-            if card_id in self.state['available_cards']:
+            # Pick card
+            if card_id:
+                if card_id not in self.cards_by_id:
+                    raise ValueError(f"Card ID {card_id} tidak valid")
+                selected_card = self.cards_by_id[card_id]
+                if card_id in self.state['available_cards']:
+                    self.state['available_cards'].remove(card_id)
+            else:
+                if not self.state['available_cards']:
+                    # Reshuffle all cards if depleted
+                    self.state['available_cards'] = [c['id'] for c in self.cards]
+                card_id = random.choice(self.state['available_cards'])
                 self.state['available_cards'].remove(card_id)
-        else:
-            if not self.state['available_cards']:
-                # Reshuffle all cards if depleted
-                self.state['available_cards'] = [c['id'] for c in self.cards]
-            card_id = random.choice(self.state['available_cards'])
-            self.state['available_cards'].remove(card_id)
-            selected_card = self.cards_by_id[card_id]
+                selected_card = self.cards_by_id[card_id]
 
-        # Calculate asset returns for this round: Base + Card
-        base_returns = {a['id']: a['base_return'] for a in self.config['assets']}
-        round_returns = {
-            'sukuk': base_returns['sukuk'] + selected_card['return_sukuk'],
-            'saham': base_returns['saham'] + selected_card['return_saham'],
-            'rdpu': base_returns['rdpu'] + selected_card['return_rdpu'],
-            'emas': base_returns['emas'] + selected_card['return_emas'],
-            'campuran': base_returns['campuran'] + selected_card['return_campuran'],
-        }
-
-        # Check if this is the start of a new stage
-        is_stage_start = (next_round - 1) % self.state['rounds_per_stage'] == 0
-        if is_stage_start:
-            # Reset stage factors
-            self.state['stage_factors'] = {
-                a: 1.0 + round_returns[a] for a in round_returns
+            # Calculate asset returns for this round: Base + Card
+            base_returns = {a['id']: a['base_return'] for a in self.config['assets']}
+            round_returns = {
+                'sukuk': base_returns['sukuk'] + selected_card['return_sukuk'],
+                'saham': base_returns['saham'] + selected_card['return_saham'],
+                'rdpu': base_returns['rdpu'] + selected_card['return_rdpu'],
+                'emas': base_returns['emas'] + selected_card['return_emas'],
+                'campuran': base_returns['campuran'] + selected_card['return_campuran'],
             }
-        else:
-            # Compound stage factors
+
+            # Check if this is the start of a new stage
+            is_stage_start = (next_round - 1) % self.state['rounds_per_stage'] == 0
+            if is_stage_start:
+                # Reset stage factors
+                self.state['stage_factors'] = {
+                    a: 1.0 + round_returns[a] for a in round_returns
+                }
+            else:
+                # Compound stage factors
+                for a in round_returns:
+                    self.state['stage_factors'][a] *= (1.0 + round_returns[a])
+
+            # Update overall asset indexes (100 base)
             for a in round_returns:
-                self.state['stage_factors'][a] *= (1.0 + round_returns[a])
+                last_idx = self.state['asset_indexes'][a][-1] if self.state['asset_indexes'].get(a) else 100.0
+                new_idx = last_idx * (1.0 + round_returns[a])
+                if a not in self.state['asset_indexes']:
+                    self.state['asset_indexes'][a] = [100.0]
+                self.state['asset_indexes'][a].append(round(new_idx, 4))
 
-        # Update overall asset indexes (100 base)
-        for a in round_returns:
-            last_idx = self.state['asset_indexes'][a][-1] if self.state['asset_indexes'].get(a) else 100.0
-            new_idx = last_idx * (1.0 + round_returns[a])
-            if a not in self.state['asset_indexes']:
-                self.state['asset_indexes'][a] = [100.0]
-            self.state['asset_indexes'][a].append(round(new_idx, 4))
+            # Record drawn card log
+            card_log_entry = {
+                'round': next_round,
+                'stage': expected_stage,
+                'card_id': card_id,
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'card': selected_card,
+                'returns': round_returns,
+                'stage_factors': dict(self.state['stage_factors'])
+            }
+            self.state['drawn_cards'].append(card_log_entry)
+            self.state['current_round'] = next_round
+            self.state['status'] = 'GAME_FINISHED' if next_round == self.state['total_rounds'] else 'ROUND_IN_PROGRESS'
 
-        # Record drawn card log
-        card_log_entry = {
-            'round': next_round,
-            'stage': expected_stage,
-            'card_id': card_id,
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'card': selected_card,
-            'returns': round_returns,
-            'stage_factors': dict(self.state['stage_factors'])
-        }
-        self.state['drawn_cards'].append(card_log_entry)
-        self.state['current_round'] = next_round
-        self.state['status'] = 'GAME_FINISHED' if next_round == self.state['total_rounds'] else 'ROUND_IN_PROGRESS'
+            # Recalculate participant values
+            self._recalculate_participants(next_round, expected_stage)
 
-        # Recalculate participant values
-        self._recalculate_participants(next_round, expected_stage)
-
-        self.state['message'] = f"Putaran {next_round}: Kartu {selected_card['title']} keluar!"
-        self.save_state()
-        self._publish_live_event('CARD_DRAWN', {
-            'card_entry': card_log_entry,
-            'round': next_round,
-            'stage': expected_stage,
-            'card': selected_card,
-            'returns': round_returns,
-            'stage_factors': dict(self.state['stage_factors']),
-            'message': self.state['message']
-        })
-        return card_log_entry
+            self.state['message'] = f"Putaran {next_round}: Kartu {selected_card['title']} keluar!"
+            self.save_state()
+            self._publish_live_event('CARD_DRAWN', {
+                'card_entry': card_log_entry,
+                'round': next_round,
+                'stage': expected_stage,
+                'card': selected_card,
+                'returns': round_returns,
+                'stage_factors': dict(self.state['stage_factors']),
+                'message': self.state['message']
+            })
+            return card_log_entry
 
     def _recalculate_participants(self, current_round, current_stage):
         rounds_per_stage = self.state['rounds_per_stage']
@@ -965,34 +992,35 @@ class GameEngine:
 
     def get_public_state(self):
         """Returns clean state for API."""
-        return {
-            'session_id': self.state.get('session_id', 1),
-            'state_version': self.state.get('state_version', 1),
-            'live_channel': self.LIVE_CHANNEL,
-            'preserve_participants_on_reset': self.state.get('preserve_participants_on_reset', False),
-            'status': self.state.get('status', 'WAITING_STAGE_1'),
-            'current_round': self.state.get('current_round', 0),
-            'current_stage': self.state.get('current_stage', 1),
-            'stage_input_open': self.state.get('stage_input_open', False),
-            'total_rounds': self.state.get('total_rounds', 30),
-            'rounds_per_stage': self.state.get('rounds_per_stage', 10),
-            'total_stages': self.state.get('total_stages', 3),
-            'total_participants': len(self.state.get('participants', {})),
-            'drawn_card_ids': [d['card_id'] for d in self.state.get('drawn_cards', []) if isinstance(d, dict) and 'card_id' in d],
-            'participants_sync': {
-                code: {
-                    'code': p['code'],
-                    'name': p['name'],
-                    'allocations': p.get('allocations', {})
-                }
-                for code, p in self.state.get('participants', {}).items()
-            },
-            'last_drawn_card': self.state['drawn_cards'][-1] if self.state.get('drawn_cards') else None,
-            'recent_cards': list(reversed(self.state['drawn_cards'][-5:])) if self.state.get('drawn_cards') else [],
-            'asset_indexes': {k: (v[-1] if v else 100.0) for k, v in self.state.get('asset_indexes', {}).items()},
-            'asset_history': self.state.get('asset_indexes', {}),
-            'message': self.state.get('message', ''),
-            'config': {k: v for k, v in self.config.items() if k != 'admin'},
-            'leaderboard_top10': self.get_leaderboard(limit=10),
-            'investor_tangguh_top5': self.get_investor_tangguh(max_dd_limit=0.10)[:5]
-        }
+        with self.lock:
+            return {
+                'session_id': self.state.get('session_id', 1),
+                'state_version': self.state.get('state_version', 1),
+                'live_channel': self.LIVE_CHANNEL,
+                'preserve_participants_on_reset': self.state.get('preserve_participants_on_reset', False),
+                'status': self.state.get('status', 'WAITING_STAGE_1'),
+                'current_round': self.state.get('current_round', 0),
+                'current_stage': self.state.get('current_stage', 1),
+                'stage_input_open': self.state.get('stage_input_open', False),
+                'total_rounds': self.state.get('total_rounds', 30),
+                'rounds_per_stage': self.state.get('rounds_per_stage', 10),
+                'total_stages': self.state.get('total_stages', 3),
+                'total_participants': len(self.state.get('participants', {})),
+                'drawn_card_ids': [d['card_id'] for d in self.state.get('drawn_cards', []) if isinstance(d, dict) and 'card_id' in d],
+                'participants_sync': {
+                    code: {
+                        'code': p['code'],
+                        'name': p['name'],
+                        'allocations': p.get('allocations', {})
+                    }
+                    for code, p in list(self.state.get('participants', {}).items())
+                },
+                'last_drawn_card': self.state['drawn_cards'][-1] if self.state.get('drawn_cards') else None,
+                'recent_cards': list(reversed(self.state['drawn_cards'][-5:])) if self.state.get('drawn_cards') else [],
+                'asset_indexes': {k: (v[-1] if v else 100.0) for k, v in self.state.get('asset_indexes', {}).items()},
+                'asset_history': self.state.get('asset_indexes', {}),
+                'message': self.state.get('message', ''),
+                'config': {k: v for k, v in self.config.items() if k != 'admin'},
+                'leaderboard_top10': self.get_leaderboard(limit=10),
+                'investor_tangguh_top5': self.get_investor_tangguh(max_dd_limit=0.10)[:5]
+            }

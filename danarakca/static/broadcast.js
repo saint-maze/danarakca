@@ -3,11 +3,13 @@
 
 const LIVE_CHANNEL = 'danarakca_live_fafc19b30c66';
 let broadcastEventSource = null;
+let sseActive = false;
+let sseErrors = 0;
 let gameState = null;
 let currentTab = 'top10'; // 'top10' or 'tangguh'
 let chartTopPlayers = null;
 let chartAssetIndexes = null;
-let pollTimer = null;
+let broadcastPollTimeout = null;
 let lastRenderedCardId = null;
 
 // Currency & Percentage Formatters
@@ -29,7 +31,7 @@ function formatPercent(num, withSign = true) {
   return pct + '%';
 }
 
-// Chart.js Initialization
+// Chart.js Initialization (Optimized for Projector Contrast and Distance)
 function initCharts() {
   const chartOptionsBase = {
     responsive: true,
@@ -39,10 +41,10 @@ function initCharts() {
       legend: {
         position: 'top',
         labels: {
-          color: '#9c9c9c',
-          font: { family: 'Inter', size: 12 },
-          boxWidth: 12,
-          boxHeight: 12
+          color: '#c1c1c1',
+          font: { family: 'Inter', size: 12, weight: '500' },
+          boxWidth: 14,
+          boxHeight: 14
         }
       },
       tooltip: {
@@ -50,9 +52,9 @@ function initCharts() {
         borderColor: '#212121',
         borderWidth: 1,
         titleColor: '#f3f3f3',
-        bodyColor: '#9c9c9c',
+        bodyColor: '#c1c1c1',
         titleFont: { family: 'Inter', size: 12 },
-        bodyFont: { family: 'JetBrains Mono', size: 11 }
+        bodyFont: { family: 'JetBrains Mono', size: 12 }
       }
     },
     scales: {
@@ -100,11 +102,11 @@ function initCharts() {
       data: {
         labels: ['Awal'],
         datasets: [
-          { label: 'Sukuk/SBN', data: [100], borderColor: '#8fb3d9', backgroundColor: '#8fb3d9', tension: 0.2, borderWidth: 2, pointRadius: 2.5 },
-          { label: 'Saham', data: [100], borderColor: '#d98f8f', backgroundColor: '#d98f8f', tension: 0.2, borderWidth: 2, pointRadius: 2.5 },
-          { label: 'RD P. Uang', data: [100], borderColor: '#8fd9a8', backgroundColor: '#8fd9a8', tension: 0.2, borderWidth: 2, pointRadius: 2.5 },
-          { label: 'Emas', data: [100], borderColor: '#d9c38f', backgroundColor: '#d9c38f', tension: 0.2, borderWidth: 2, pointRadius: 2.5 },
-          { label: 'Campuran', data: [100], borderColor: '#b38fd9', backgroundColor: '#b38fd9', tension: 0.2, borderWidth: 2, pointRadius: 2.5 }
+          { label: 'Sukuk/SBN', data: [100], borderColor: '#8fb3d9', backgroundColor: '#8fb3d9', tension: 0.2, borderWidth: 2.5, pointRadius: 3 },
+          { label: 'Saham', data: [100], borderColor: '#d98f8f', backgroundColor: '#d98f8f', tension: 0.2, borderWidth: 2.5, pointRadius: 3 },
+          { label: 'Pasar Uang', data: [100], borderColor: '#8fd9a8', backgroundColor: '#8fd9a8', tension: 0.2, borderWidth: 2.5, pointRadius: 3 },
+          { label: 'Emas', data: [100], borderColor: '#d9c38f', backgroundColor: '#d9c38f', tension: 0.2, borderWidth: 2.5, pointRadius: 3 },
+          { label: 'Campuran', data: [100], borderColor: '#b38fd9', backgroundColor: '#b38fd9', tension: 0.2, borderWidth: 2.5, pointRadius: 3 }
         ]
       },
       options: chartOptionsBase
@@ -112,18 +114,22 @@ function initCharts() {
   }
 }
 
-// Realtime Stream via SSE
+// Realtime Stream via SSE with Error Handling & Auto Fallback
 function initRealtimeStream() {
   const channel = (gameState && gameState.live_channel) || LIVE_CHANNEL;
   if (broadcastEventSource) {
     try { broadcastEventSource.close(); } catch (e) {}
   }
+  sseActive = false;
+  sseErrors = 0;
 
   try {
     broadcastEventSource = new EventSource(`https://ntfy.sh/${channel}/sse?since=now`);
     broadcastEventSource.onopen = () => {
+      sseActive = true;
+      sseErrors = 0;
       const syncEl = document.getElementById('syncStatusText');
-      if (syncEl) syncEl.innerText = 'Live · SSE Aktif';
+      if (syncEl) syncEl.innerText = 'Tersinkronisasi';
     };
     broadcastEventSource.onmessage = (e) => {
       try {
@@ -133,10 +139,20 @@ function initRealtimeStream() {
       } catch (err) {}
     };
     broadcastEventSource.onerror = () => {
+      sseErrors++;
+      sseActive = false;
+      // Close immediately if closed or 403 rate-limited on public SSE
+      if (broadcastEventSource && (broadcastEventSource.readyState === EventSource.CLOSED || sseErrors >= 2)) {
+        try { broadcastEventSource.close(); } catch (e) {}
+        broadcastEventSource = null;
+      }
       const syncEl = document.getElementById('syncStatusText');
-      if (syncEl) syncEl.innerText = 'Live · Polling Fallback';
+      if (syncEl) syncEl.innerText = 'Polling Aktif';
     };
-  } catch (err) {}
+  } catch (err) {
+    sseActive = false;
+    broadcastEventSource = null;
+  }
 }
 
 // State Synchronization
@@ -148,9 +164,7 @@ function applyIncomingState(newState) {
     const curVer = gameState.state_version || 0;
     const newVer = newState.state_version || 0;
 
-    if (newSess < curSess) {
-      return;
-    }
+    if (newSess < curSess) return;
 
     if (newSess === curSess) {
       // Prevent round rollback
@@ -167,9 +181,7 @@ function applyIncomingState(newState) {
       if ((!newState.investor_tangguh_top5 || newState.investor_tangguh_top5.length === 0) && (gameState.investor_tangguh_top5 && gameState.investor_tangguh_top5.length > 0)) {
         newState.investor_tangguh_top5 = gameState.investor_tangguh_top5;
       }
-      if (newVer < curVer) {
-        return;
-      }
+      if (newVer < curVer) return;
     }
   }
 
@@ -186,8 +198,22 @@ async function fetchState() {
     }
   } catch (err) {
     const syncEl = document.getElementById('syncStatusText');
-    if (syncEl) syncEl.innerText = 'Mencoba Menghubungkan...';
+    if (syncEl) syncEl.innerText = 'Menghubungkan...';
   }
+}
+
+// Dynamic Jittered Polling Schedule
+function scheduleBroadcastPoll() {
+  if (broadcastPollTimeout) clearTimeout(broadcastPollTimeout);
+  const baseInterval = sseActive ? 3500 : 1800;
+  const jitter = Math.floor(Math.random() * 500);
+
+  broadcastPollTimeout = setTimeout(async () => {
+    if (!document.hidden) {
+      await fetchState();
+    }
+    scheduleBroadcastPoll();
+  }, baseInterval + jitter);
 }
 
 // Render Functions
@@ -239,11 +265,10 @@ function renderBroadcast() {
     const c = lastCard.card;
     const cardId = `${lastCard.round}-${c.id}`;
 
-    // Apply animation if new card drawn
     if (cardContent && cardId !== lastRenderedCardId) {
       lastRenderedCardId = cardId;
       cardContent.classList.remove('card-zoom');
-      void cardContent.offsetWidth; // Trigger reflow
+      void cardContent.offsetWidth;
       cardContent.classList.add('card-zoom');
     }
 
@@ -269,11 +294,11 @@ function renderBroadcast() {
 
     if (inputStatusText && inputStatusDot && badgeInputStatus) {
       if (gameState.stage_input_open) {
-        inputStatusText.innerText = 'Input Alokasi: Terbuka';
+        inputStatusText.innerText = 'Alokasi Terbuka';
         inputStatusDot.className = 'w-1.5 h-1.5 rounded-full bg-pulse animate-pulse';
         badgeInputStatus.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-tag font-mono text-xs font-semibold bg-pulse/10 border border-pulse/30 text-pulse';
       } else {
-        inputStatusText.innerText = 'Input Alokasi: Ditutup';
+        inputStatusText.innerText = 'Alokasi Ditutup';
         inputStatusDot.className = 'w-1.5 h-1.5 rounded-full bg-smoke';
         badgeInputStatus.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-tag font-mono text-xs font-semibold bg-obsidian hairline text-smoke';
       }
@@ -317,10 +342,10 @@ function setImpactUI(assetKey, totalReturn, baseReturn, cardEffect) {
   } else if (totalReturn < 0) {
     el.className = 'text-heading-xs tabular font-mono font-semibold text-loss';
   } else {
-    el.className = 'text-heading-xs tabular font-mono font-semibold text-smoke';
+    el.className = 'text-heading-xs tabular font-mono font-semibold text-ash';
   }
 
-  sub.innerText = `Dasar ${formatPercent(baseReturn)} · K ${formatPercent(cardEffect)}`;
+  sub.innerText = `Dasar ${formatPercent(baseReturn)} · Efek ${formatPercent(cardEffect)}`;
 }
 
 function renderRecentCards() {
@@ -332,7 +357,6 @@ function renderRecentCards() {
     return;
   }
 
-  // Show up to 3 recent cards
   const recent = gameState.recent_cards.slice(0, 3);
   container.innerHTML = recent.map(c => `
     <div class="flex items-center justify-between p-2.5 rounded-card bg-obsidian hairline text-caption">
@@ -357,13 +381,13 @@ function switchLbTab(tab) {
   if (tab === 'top10') {
     if (btn10) btn10.className = 'px-3 py-1 rounded-card bg-chalk text-obsidian font-semibold transition-colors';
     if (btnT) btnT.className = 'px-3 py-1 rounded-card text-smoke hover:text-chalk transition-colors';
-    if (title) title.innerText = 'Papan Peringkat (Top 10)';
-    if (sub) sub.innerText = 'Akumulasi total portofolio tertinggi';
+    if (title) title.innerText = 'Papan Peringkat';
+    if (sub) sub.innerText = '10 Portofolio Terbesar';
   } else {
     if (btnT) btnT.className = 'px-3 py-1 rounded-card bg-chalk text-obsidian font-semibold transition-colors';
     if (btn10) btn10.className = 'px-3 py-1 rounded-card text-smoke hover:text-chalk transition-colors';
-    if (title) title.innerText = 'Investor Tangguh (Disiplin Risiko)';
-    if (sub) sub.innerText = 'Peserta dengan toleransi drawdown terbaik';
+    if (title) title.innerText = 'Investor Tangguh';
+    if (sub) sub.innerText = 'Disiplin Risiko Terbaik';
   }
   renderLeaderboard();
 }
@@ -418,7 +442,7 @@ function renderLeaderboard() {
         <td class="py-2.5 px-2">
           <div class="text-chalk truncate max-w-[140px] sm:max-w-none font-medium">${p.name || 'Peserta'}</div>
         </td>
-        <td class="py-2.5 px-2 text-right font-mono text-chalk">${formatRupiah(currentVal)}</td>
+        <td class="py-2.5 px-2 text-right font-mono text-chalk font-semibold">${formatRupiah(currentVal)}</td>
         <td class="py-2.5 px-1 text-right font-mono ${returnColor}">${returnSign}</td>
         <td class="py-2.5 px-1 text-right font-mono text-smoke">${mddPct}</td>
       </tr>
@@ -435,7 +459,7 @@ function updateCharts() {
     labels.push(`K${r}`);
   }
 
-  // Top 5 Players Progression
+  // Top 5 Portfolios
   const top5 = (gameState.leaderboard_top10 || []).slice(0, 5);
   const lineColors = ['#f3f3f3', '#8fb3d9', '#8fd9a8', '#d9c38f', '#b38fd9'];
 
@@ -445,8 +469,8 @@ function updateCharts() {
     borderColor: lineColors[idx % lineColors.length],
     backgroundColor: lineColors[idx % lineColors.length],
     tension: 0.2,
-    borderWidth: 2,
-    pointRadius: 2.5
+    borderWidth: 2.5,
+    pointRadius: 3
   }));
 
   chartTopPlayers.data.labels = labels;
@@ -486,7 +510,7 @@ document.addEventListener('fullscreenchange', () => {
   }
 });
 
-// QR Code Modal for Joining
+// QR Code Modal
 function showQRModal() {
   const modal = document.getElementById('qrModal');
   const container = document.getElementById('qrCodeContainer');
@@ -522,7 +546,6 @@ function hideQRModal() {
   modal.classList.remove('flex');
 }
 
-// Close QR Modal on ESC or Outside Click
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') hideQRModal();
 });
@@ -534,19 +557,17 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// Auto-Refresh & Lifecycle Setup
+// Lifecycle Setup
 window.addEventListener('DOMContentLoaded', () => {
   initCharts();
   fetchState();
   initRealtimeStream();
+  scheduleBroadcastPoll();
 
-  // Background polling fallback every 1500ms
-  pollTimer = setInterval(fetchState, 1500);
-
-  // Immediate sync on visibility change
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
+    if (!document.hidden) {
       fetchState();
+      scheduleBroadcastPoll();
     }
   });
 });

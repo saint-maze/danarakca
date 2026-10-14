@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Danarakca · Layar Broadcast Proyektor</title>
+  <title>Danarakca · Layar Siaran Proyektor</title>
   <link rel="icon" type="image/png" href="img/thunderbolt.png">
   <link rel="apple-touch-icon" href="img/thunderbolt.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,15 +17,14 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
   <style>
-    /* Broadcast presentation optimizations */
     .glow-pulse {
       box-shadow: 0 0 24px rgba(152, 255, 56, 0.12);
     }
     .card-zoom {
-      animation: cardZoomIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      animation: cardZoomIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
     @keyframes cardZoomIn {
-      0% { opacity: 0; transform: scale(0.98); }
+      0% { opacity: 0; transform: scale(0.985); }
       100% { opacity: 1; transform: scale(1); }
     }
   </style>
@@ -33,19 +32,14 @@
 
 <body class="bg-obsidian text-chalk min-h-screen flex flex-col justify-between relative overflow-x-hidden select-none">
 
-  <!-- Sliding Diagonals Ambient Effect -->
-  <div class="bg-sliding-container" aria-hidden="true">
-    <div class="bg"></div>
-    <div class="bg bg2"></div>
-    <div class="bg bg3"></div>
-    <div class="absolute inset-0 bg-gradient-to-b from-obsidian/60 via-obsidian/25 to-obsidian/85"></div>
-  </div>
+  <!-- Static Background Gradient (Optimized for Projectors, No Heavy GPU Composite Loops) -->
+  <div class="fixed inset-0 bg-gradient-to-b from-obsidian via-carbon to-obsidian pointer-events-none" aria-hidden="true"></div>
 
   <!-- Broadcast Header -->
   <header class="hairline-b bg-obsidian/95 backdrop-blur-md sticky top-0 z-40">
     <div class="w-full max-w-[1720px] mx-auto px-4 sm:px-8 py-3 flex items-center justify-between gap-4">
 
-      <!-- Left: Logo & Live Status Indicator -->
+      <!-- Left: Brand & Live Indicator -->
       <div class="flex items-center gap-4 sm:gap-6">
         <a href="index.html" class="flex items-center gap-3.5 group text-decoration-none">
           <img src="img/logo-danarakca.png" alt="Logo Danarakca" class="h-10 sm:h-12 w-auto object-contain shrink-0 drop-shadow-md">
@@ -56,7 +50,7 @@
               </span>
               <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-tag bg-pulse/10 border border-pulse/30 text-pulse font-mono text-[11px] font-semibold">
                 <span class="w-1.5 h-1.5 rounded-full bg-pulse animate-pulse"></span>
-                LIVE BROADCAST
+                SIARAN UTAMA
               </span>
             </div>
             <span class="text-caption text-smoke block text-[11px] leading-tight mt-0.5 font-mono">
@@ -66,36 +60,36 @@
         </a>
       </div>
 
-      <!-- Center / Right: Live Session Status Badges -->
+      <!-- Center / Right: Session Metrics -->
       <div class="flex items-center gap-3 sm:gap-4">
 
         <div class="hidden sm:grid grid-cols-5 divide-x divide-graphite rounded-button hairline overflow-hidden bg-carbon font-mono text-center shrink-0">
           <!-- Putaran -->
-          <div class="px-3 py-1.5 flex flex-col items-center justify-center">
+          <div class="px-3.5 py-1.5 flex flex-col items-center justify-center">
             <span class="text-[10px] uppercase tracking-wider text-smoke font-sans">Putaran</span>
             <span class="text-xs sm:text-sm font-semibold text-white tabular whitespace-nowrap" id="badgeRound">0 / 30</span>
           </div>
 
           <!-- Waktu -->
-          <div class="px-3 py-1.5 flex flex-col items-center justify-center">
+          <div class="px-3.5 py-1.5 flex flex-col items-center justify-center">
             <span class="text-[10px] uppercase tracking-wider text-smoke font-sans">Waktu</span>
             <span class="text-xs sm:text-sm font-semibold text-white tabular whitespace-nowrap" id="badgeSimTime">Tahun 1 · Awal</span>
           </div>
 
           <!-- Tahap -->
-          <div class="px-3 py-1.5 flex flex-col items-center justify-center">
+          <div class="px-3.5 py-1.5 flex flex-col items-center justify-center">
             <span class="text-[10px] uppercase tracking-wider text-smoke font-sans">Tahap</span>
             <span class="text-xs sm:text-sm font-semibold text-white tabular whitespace-nowrap" id="badgeStage">1 / 3</span>
           </div>
 
           <!-- Peserta -->
-          <div class="px-3 py-1.5 flex flex-col items-center justify-center">
+          <div class="px-3.5 py-1.5 flex flex-col items-center justify-center">
             <span class="text-[10px] uppercase tracking-wider text-smoke font-sans">Peserta</span>
             <span class="text-xs sm:text-sm font-semibold text-white tabular whitespace-nowrap" id="badgeParticipants">0</span>
           </div>
 
           <!-- Kekayaan Tertinggi -->
-          <div class="px-3 py-1.5 flex flex-col items-center justify-center">
+          <div class="px-3.5 py-1.5 flex flex-col items-center justify-center">
             <span class="text-[10px] uppercase tracking-wider text-smoke font-sans">Aset Puncak</span>
             <span class="text-xs sm:text-sm font-semibold text-pulse tabular whitespace-nowrap" id="badgeHighestWealth">Rp 100,0 Jt</span>
           </div>
@@ -105,9 +99,9 @@
         <div class="flex items-center gap-2">
           <button onclick="showQRModal()"
             class="h-9 px-3.5 flex items-center gap-2 rounded-button bg-carbon border border-graphite hover:border-chalk text-chalk font-mono text-xs font-medium transition-all cursor-pointer hover:bg-obsidian shadow-sm shrink-0"
-            title="Tampilkan QR Code untuk pendaftaran peserta">
+            title="Tampilkan QR Code pendaftaran">
             <span>📱</span>
-            <span class="hidden md:inline">Scan Gabung</span>
+            <span class="hidden md:inline">Pindai QR</span>
           </button>
 
           <button id="btnFullscreen" onclick="toggleFullscreen()"
@@ -130,22 +124,22 @@
 
       <!-- LEFT: Active Scenario Card & Impact Matrix (7 Columns) -->
       <div class="lg:col-span-7 flex flex-col">
-        <div class="panel p-6 sm:p-7 flex flex-col justify-between h-full bg-carbon/90 backdrop-blur-md relative overflow-hidden">
+        <div class="panel p-6 sm:p-7 flex flex-col justify-between h-full bg-carbon/95 backdrop-blur-md relative overflow-hidden">
 
           <!-- Card Placeholder (When Round 0) -->
           <div id="cardPlaceholder" class="flex flex-col items-center justify-center text-center py-16 sm:py-20 px-4 h-full">
             <div class="w-16 h-16 rounded-card hairline bg-obsidian flex items-center justify-center mb-5 text-2xl">
               🎲
             </div>
-            <h2 class="text-heading-sm sm:text-heading text-chalk mb-2.5 font-medium">
-              Simulasi Danarakca Siap Dimulai
+            <h2 class="text-heading-sm sm:text-heading text-chalk mb-2 font-medium">
+              Sesi Simulasi Siap Dimulai
             </h2>
             <p class="text-body text-smoke max-w-lg mb-6 leading-relaxed text-sm">
-              Peserta dapat bergabung menggunakan perangkat masing-masing melalui scan QR Code atau mengakses alamat web permainan.
+              Peserta memindai kode QR atau membuka tautan pendaftaran untuk bergabung ke dalam sesi.
             </p>
             <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-button hairline bg-obsidian font-mono text-xs text-ash">
               <span class="w-2 h-2 rounded-full bg-pulse animate-pulse"></span>
-              Menunggu Fasilitator mengocok kartu Putaran 1
+              Menunggu Fasilitator membuka Putaran 1
             </div>
           </div>
 
@@ -163,83 +157,83 @@
                 </span>
               </div>
 
-              <!-- Live Input Status Badge -->
+              <!-- Input Status Badge -->
               <div id="badgeInputStatus" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-tag font-mono text-xs font-semibold bg-obsidian hairline text-smoke">
                 <span class="w-1.5 h-1.5 rounded-full bg-smoke" id="inputStatusDot"></span>
-                <span id="inputStatusText">Input Alokasi: Ditutup</span>
+                <span id="inputStatusText">Alokasi Ditutup</span>
               </div>
             </div>
 
             <!-- Card Body: Headline & Narration -->
             <div class="space-y-3.5 mb-6">
               <h2 id="cardTitle" class="text-heading sm:text-heading-lg text-chalk font-medium tracking-tight leading-snug">
-                Judul Berita Pasar
+                Judul Skenario Pasar
               </h2>
-              <p id="cardNarration" class="text-body sm:text-subheading text-smoke leading-relaxed font-sans">
-                Narasi skenario ekonomi dan kondisi pasar kuartal ini...
+              <p id="cardNarration" class="text-body sm:text-subheading text-ash leading-relaxed font-sans">
+                Kondisi makro ekonomi dan peristiwa pasar kuartal ini...
               </p>
-              <div class="p-3.5 rounded-card hairline bg-obsidian text-caption text-ash leading-relaxed">
-                <span class="font-mono text-smoke uppercase text-[11px] tracking-wider block mb-0.5">Analisis Dampak:</span>
-                <span id="cardExplanation">Keterangan transmisi dampak ekonomi ke instrumen pasar keuangan...</span>
+              <div class="p-3.5 rounded-card hairline bg-obsidian text-caption text-smoke leading-relaxed">
+                <span class="font-mono text-chalk uppercase text-[11px] tracking-wider block mb-0.5">Transmisi Pasar:</span>
+                <span id="cardExplanation" class="text-ash">Penjelasan transmisi dampak ekonomi ke instrumen pasar keuangan...</span>
               </div>
             </div>
 
             <!-- 5-Asset Impact Matrix -->
             <div>
-              <div class="meta text-smoke mb-2 flex items-center justify-between">
-                <span>Dampak Imbal Hasil Kuartal Ini (Return Pasar):</span>
-                <span class="font-mono text-[11px] text-smoke">Dasar Kuartal + Efek Kartu</span>
+              <div class="meta text-smoke mb-2 flex items-center justify-between text-xs">
+                <span>Imbal Hasil Pasar Kuartal Ini:</span>
+                <span class="font-mono text-[11px] text-smoke">Dasar + Efek Skenario</span>
               </div>
 
               <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
                 <!-- Sukuk -->
                 <div class="p-3 rounded-card hairline bg-obsidian flex flex-col justify-between">
                   <div class="flex items-center justify-between mb-1">
-                    <span class="font-mono text-xs text-smoke">Sukuk/SBN</span>
+                    <span class="font-mono text-xs text-ash">Sukuk/SBN</span>
                     <span class="w-2 h-2 rounded-full bg-sukuk"></span>
                   </div>
                   <div class="text-heading-xs tabular font-mono font-semibold" id="impactSukuk">0,0%</div>
-                  <div class="text-[10px] text-smoke font-mono truncate mt-1" id="impactSukukSub">Dasar 0% · K 0%</div>
+                  <div class="text-[10px] text-smoke font-mono truncate mt-1" id="impactSukukSub">Dasar 0% · Efek 0%</div>
                 </div>
 
                 <!-- Saham -->
                 <div class="p-3 rounded-card hairline bg-obsidian flex flex-col justify-between">
                   <div class="flex items-center justify-between mb-1">
-                    <span class="font-mono text-xs text-smoke">Saham</span>
+                    <span class="font-mono text-xs text-ash">Saham</span>
                     <span class="w-2 h-2 rounded-full bg-saham"></span>
                   </div>
                   <div class="text-heading-xs tabular font-mono font-semibold" id="impactSaham">0,0%</div>
-                  <div class="text-[10px] text-smoke font-mono truncate mt-1" id="impactSahamSub">Dasar 0% · K 0%</div>
+                  <div class="text-[10px] text-smoke font-mono truncate mt-1" id="impactSahamSub">Dasar 0% · Efek 0%</div>
                 </div>
 
                 <!-- RDPU -->
                 <div class="p-3 rounded-card hairline bg-obsidian flex flex-col justify-between">
                   <div class="flex items-center justify-between mb-1">
-                    <span class="font-mono text-xs text-smoke">Pasar Uang</span>
+                    <span class="font-mono text-xs text-ash">Pasar Uang</span>
                     <span class="w-2 h-2 rounded-full bg-rdpu"></span>
                   </div>
                   <div class="text-heading-xs tabular font-mono font-semibold" id="impactRdpu">0,0%</div>
-                  <div class="text-[10px] text-smoke font-mono truncate mt-1" id="impactRdpuSub">Dasar 0% · K 0%</div>
+                  <div class="text-[10px] text-smoke font-mono truncate mt-1" id="impactRdpuSub">Dasar 0% · Efek 0%</div>
                 </div>
 
                 <!-- Emas -->
                 <div class="p-3 rounded-card hairline bg-obsidian flex flex-col justify-between">
                   <div class="flex items-center justify-between mb-1">
-                    <span class="font-mono text-xs text-smoke">Emas</span>
+                    <span class="font-mono text-xs text-ash">Emas</span>
                     <span class="w-2 h-2 rounded-full bg-emas"></span>
                   </div>
                   <div class="text-heading-xs tabular font-mono font-semibold" id="impactEmas">0,0%</div>
-                  <div class="text-[10px] text-smoke font-mono truncate mt-1" id="impactEmasSub">Dasar 0% · K 0%</div>
+                  <div class="text-[10px] text-smoke font-mono truncate mt-1" id="impactEmasSub">Dasar 0% · Efek 0%</div>
                 </div>
 
                 <!-- Campuran -->
                 <div class="col-span-2 sm:col-span-1 p-3 rounded-card hairline bg-obsidian flex flex-col justify-between">
                   <div class="flex items-center justify-between mb-1">
-                    <span class="font-mono text-xs text-smoke">Campuran</span>
+                    <span class="font-mono text-xs text-ash">Campuran</span>
                     <span class="w-2 h-2 rounded-full bg-campuran"></span>
                   </div>
                   <div class="text-heading-xs tabular font-mono font-semibold" id="impactCampuran">0,0%</div>
-                  <div class="text-[10px] text-smoke font-mono truncate mt-1" id="impactCampuranSub">Dasar 0% · K 0%</div>
+                  <div class="text-[10px] text-smoke font-mono truncate mt-1" id="impactCampuranSub">Dasar 0% · Efek 0%</div>
                 </div>
               </div>
             </div>
@@ -247,7 +241,7 @@
             <!-- Recent Cards Mini Strip -->
             <div class="mt-4 pt-3 hairline-t">
               <div class="flex items-center justify-between mb-2">
-                <span class="meta text-[11px] text-smoke">Riwayat Kartu Terakhir:</span>
+                <span class="meta text-[11px] text-smoke">Riwayat Putaran Sebelumnya:</span>
               </div>
               <div id="recentCardsList" class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div class="text-caption text-smoke italic py-1">Belum ada riwayat kartu sebelumnya.</div>
@@ -261,14 +255,14 @@
 
       <!-- RIGHT: Leaderboard Panel (5 Columns) -->
       <div class="lg:col-span-5 flex flex-col">
-        <div class="panel p-6 sm:p-7 flex flex-col justify-between h-full bg-carbon/90 backdrop-blur-md">
+        <div class="panel p-6 sm:p-7 flex flex-col justify-between h-full bg-carbon/95 backdrop-blur-md">
 
           <!-- Leaderboard Header with Tabs -->
           <div>
             <div class="flex items-center justify-between pb-4 hairline-b mb-3">
               <div>
-                <h3 class="text-heading-xs text-chalk font-semibold" id="lbTabTitle">Papan Peringkat (Top 10)</h3>
-                <p class="text-caption text-smoke" id="lbTabSub">Akumulasi total portofolio tertinggi</p>
+                <h3 class="text-heading-xs text-chalk font-semibold" id="lbTabTitle">Papan Peringkat</h3>
+                <p class="text-caption text-smoke" id="lbTabSub">10 Portofolio Terbesar</p>
               </div>
 
               <!-- Segmented Tab Controls -->
@@ -289,12 +283,12 @@
               <table class="w-full text-left text-caption">
                 <thead>
                   <tr class="text-smoke hairline-b pb-2">
-                    <th class="py-2.5 px-1 w-8 text-center meta">#</th>
-                    <th class="py-2.5 px-1 w-8 text-center meta">±</th>
-                    <th class="py-2.5 px-2 meta">Peserta</th>
-                    <th class="py-2.5 px-2 text-right meta">Aset</th>
-                    <th class="py-2.5 px-1 text-right meta">Return</th>
-                    <th class="py-2.5 px-1 text-right meta">Max DD</th>
+                    <th class="py-2 px-1 w-8 text-center meta">#</th>
+                    <th class="py-2 px-1 w-8 text-center meta">±</th>
+                    <th class="py-2 px-2 meta">Peserta</th>
+                    <th class="py-2 px-2 text-right meta">Aset</th>
+                    <th class="py-2 px-1 text-right meta">Return</th>
+                    <th class="py-2 px-1 text-right meta">Max DD</th>
                   </tr>
                 </thead>
                 <tbody id="leaderboardTbody" class="divide-y divide-graphite font-mono">
@@ -308,13 +302,13 @@
             </div>
           </div>
 
-          <!-- Explanatory Footnote -->
+          <!-- Footnote -->
           <div class="mt-4 pt-3 hairline-t text-caption text-smoke leading-relaxed flex items-center justify-between">
             <div>
-              <span class="text-ash font-medium">Investor Tangguh:</span> Disiplin risiko terbaik (toleransi drawdown terkecil).
+              <span class="text-ash font-medium">Kriteria Tangguh:</span> Portofolio dengan drawdown kumulatif terendah.
             </div>
             <div class="font-mono text-[11px] text-smoke shrink-0 ml-2" id="syncStatusText">
-              Live Sync
+              Tersinkronisasi
             </div>
           </div>
 
@@ -327,13 +321,13 @@
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2">
 
       <!-- Chart 1: Top 5 Portfolios Progression -->
-      <div class="lg:col-span-6 panel p-5 sm:p-6 bg-carbon/90 backdrop-blur-md">
+      <div class="lg:col-span-6 panel p-5 sm:p-6 bg-carbon/95 backdrop-blur-md">
         <div class="flex items-center justify-between pb-3 hairline-b mb-3">
           <div>
-            <h4 class="text-heading-xs text-chalk font-semibold">Tren Portofolio 5 Besar</h4>
+            <h4 class="text-heading-xs text-chalk font-semibold">Portofolio 5 Teratas</h4>
             <p class="text-caption text-smoke">Pertumbuhan nilai aset peserta terbaik per kuartal</p>
           </div>
-          <span class="font-mono text-xs text-smoke">Chart.js</span>
+          <span class="font-mono text-xs text-smoke">Nilai Portofolio</span>
         </div>
         <div class="h-64 sm:h-72 w-full relative">
           <canvas id="chartTopPlayers"></canvas>
@@ -341,11 +335,11 @@
       </div>
 
       <!-- Chart 2: Benchmark Asset Indexes -->
-      <div class="lg:col-span-6 panel p-5 sm:p-6 bg-carbon/90 backdrop-blur-md">
+      <div class="lg:col-span-6 panel p-5 sm:p-6 bg-carbon/95 backdrop-blur-md">
         <div class="flex items-center justify-between pb-3 hairline-b mb-3">
           <div>
-            <h4 class="text-heading-xs text-chalk font-semibold">Pergerakan Indeks Aset Acuan</h4>
-            <p class="text-caption text-smoke">Kinerja kumulatif 5 kelas aset pasar (Basis 100)</p>
+            <h4 class="text-heading-xs text-chalk font-semibold">Pergerakan Indeks Acuan</h4>
+            <p class="text-caption text-smoke">Kinerja kumulatif 5 instrumen pasar (Basis 100)</p>
           </div>
           <span class="font-mono text-xs text-smoke">Basis 100</span>
         </div>
@@ -362,12 +356,10 @@
   <footer class="hairline-t bg-obsidian/95 backdrop-blur-md py-3 text-caption text-smoke relative z-10">
     <div class="w-full max-w-[1720px] mx-auto px-4 sm:px-8 flex items-center justify-between text-xs font-mono">
       <div>
-        Danarakca · Simulasi Alokasi Portofolio Berbasis Skenario Pasar
+        Danarakca · Simulasi Alokasi Portofolio Berbasis Skenario Pasar · DJPPR Kementerian Keuangan RI
       </div>
       <div class="flex items-center gap-4">
         <span>Tekan <kbd class="px-1.5 py-0.5 rounded bg-graphite text-chalk">F11</kbd> untuk Layar Penuh</span>
-        <span class="text-graphite">|</span>
-        <span class="text-iron">v1.2-broadcast</span>
       </div>
     </div>
   </footer>
@@ -376,7 +368,7 @@
   <div id="qrModal" class="fixed inset-0 z-50 bg-obsidian/80 backdrop-blur-md hidden items-center justify-center p-4">
     <div class="panel-deep p-8 max-w-sm w-full bg-carbon rounded-card hairline shadow-2xl text-center space-y-4">
       <div class="meta text-smoke">Pendaftaran Peserta</div>
-      <h3 class="text-heading-sm text-chalk font-medium">Scan Untuk Bergabung</h3>
+      <h3 class="text-heading-sm text-chalk font-medium">Pindai untuk Bergabung</h3>
       <p class="text-caption text-smoke">Arahkan kamera smartphone ke kode QR berikut untuk membuka formulir peserta.</p>
 
       <div class="p-4 bg-white rounded-card mx-auto inline-block shadow-inner">
@@ -388,7 +380,7 @@
       </div>
 
       <button onclick="hideQRModal()" class="btn-ghost w-full py-2.5 font-mono text-xs">
-        Tutup Tampilan QR
+        Tutup
       </button>
     </div>
   </div>

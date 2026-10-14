@@ -106,6 +106,9 @@ function handleRealtimeEvent(msg, sentAtSec) {
   }
 }
 
+let sseErrorCount = 0;
+let isSseActive = false;
+
 function initRealtimeStream(channel) {
   const targetChannel = channel || (gameState && gameState.live_channel) || LIVE_CHANNEL;
   if (liveEventSource && currentLiveChannel === targetChannel) return;
@@ -113,8 +116,15 @@ function initRealtimeStream(channel) {
     try { liveEventSource.close(); } catch (e) {}
   }
   currentLiveChannel = targetChannel;
+  sseErrorCount = 0;
+  isSseActive = false;
+
   try {
     liveEventSource = new EventSource(`https://ntfy.sh/${targetChannel}/sse?since=now`);
+    liveEventSource.onopen = () => {
+      sseErrorCount = 0;
+      isSseActive = true;
+    };
     liveEventSource.onmessage = (e) => {
       try {
         const raw = JSON.parse(e.data);
@@ -123,8 +133,18 @@ function initRealtimeStream(channel) {
         handleRealtimeEvent(msg, raw.time);
       } catch (err) {}
     };
+    liveEventSource.onerror = () => {
+      sseErrorCount++;
+      isSseActive = false;
+      // Close immediately if closed or 403 rate-limited on public SSE to prevent infinite console reconnects
+      if (liveEventSource && (liveEventSource.readyState === EventSource.CLOSED || sseErrorCount >= 2)) {
+        try { liveEventSource.close(); } catch (e) {}
+        liveEventSource = null;
+      }
+    };
   } catch (err) {
-    console.warn('Realtime SSE unavailable:', err);
+    isSseActive = false;
+    liveEventSource = null;
   }
 }
 
@@ -455,6 +475,25 @@ function updateParticipantUI() {
     syncSliders();
     lastLoadedStage = currStage;
   }
+
+  // If input was closed while user was editing unsubmitted values, revert sliders to legitimate allocation
+  if (!gameState.stage_input_open && userIsEditing) {
+    userIsEditing = false;
+    const stageKey = String(currStage);
+    const stageAlloc = savedAllocations[stageKey] || participantData.allocations?.[stageKey];
+    if (stageAlloc) {
+      allocation = { ...stageAlloc };
+    } else {
+      for (let s = currStage - 1; s >= 1; s--) {
+        const prevAlloc = savedAllocations[String(s)] || participantData.allocations?.[String(s)];
+        if (prevAlloc) {
+          allocation = { ...prevAlloc };
+          break;
+        }
+      }
+    }
+    syncSliders();
+  }
 }
 
 function updateStageInputStatus() {
@@ -725,15 +764,30 @@ async function handleAllocationSubmit(e) {
   }
 }
 
+let playerPollTimeout = null;
+
+function schedulePlayerPoll() {
+  if (playerPollTimeout) clearTimeout(playerPollTimeout);
+  const baseInterval = isSseActive ? 5000 : 2400;
+  const jitter = Math.floor(Math.random() * 800);
+
+  playerPollTimeout = setTimeout(async () => {
+    if (!document.hidden && currentUser) {
+      await fetchStateAndParticipant();
+    }
+    schedulePlayerPoll();
+  }, baseInterval + jitter);
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   initRealtimeStream();
   initAuth();
-  // Active fallback polling: checks every 1200ms when screen active
-  setInterval(() => {
-    if (!document.hidden) fetchStateAndParticipant();
-  }, 1200);
+  schedulePlayerPoll();
 
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) fetchStateAndParticipant();
+    if (!document.hidden && currentUser) {
+      fetchStateAndParticipant();
+      schedulePlayerPoll();
+    }
   });
 });

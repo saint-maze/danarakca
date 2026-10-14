@@ -187,7 +187,17 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
         path = parsed.path
 
         if path.startswith('/api/'):
-            engine.refresh_state()
+            is_write = path in (
+                '/api/facilitator/draw-card',
+                '/api/facilitator/toggle-input',
+                '/api/facilitator/next-stage',
+                '/api/facilitator/set-mode',
+                '/api/facilitator/reset',
+                '/api/facilitator/seed-mock-users',
+                '/api/participant/submit',
+                '/api/participant/register'
+            )
+            engine.refresh_state(force=is_write)
 
         try:
             body = self.parse_json_body()
@@ -329,6 +339,7 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
 class ReusableThreadingServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
+    request_queue_size = 512
 
 def run(port=PORT):
     server_address = ('', port)

@@ -27,13 +27,23 @@ function broadcastLivePush(eventType, payload = {}) {
   } catch (e) {}
 }
 
+let facilitatorSseActive = false;
+let facilitatorSseErrors = 0;
+
 function initFacilitatorRealtimeStream() {
   const channel = (gameState && gameState.live_channel) || LIVE_CHANNEL;
   if (facilitatorEventSource) {
     try { facilitatorEventSource.close(); } catch (e) {}
   }
+  facilitatorSseActive = false;
+  facilitatorSseErrors = 0;
+
   try {
     facilitatorEventSource = new EventSource(`https://ntfy.sh/${channel}/sse?since=now`);
+    facilitatorEventSource.onopen = () => {
+      facilitatorSseActive = true;
+      facilitatorSseErrors = 0;
+    };
     facilitatorEventSource.onmessage = (e) => {
       try {
         const raw = JSON.parse(e.data);
@@ -41,7 +51,18 @@ function initFacilitatorRealtimeStream() {
         fetchState();
       } catch (err) {}
     };
-  } catch (err) {}
+    facilitatorEventSource.onerror = () => {
+      facilitatorSseErrors++;
+      facilitatorSseActive = false;
+      if (facilitatorEventSource && (facilitatorEventSource.readyState === EventSource.CLOSED || facilitatorSseErrors >= 2)) {
+        try { facilitatorEventSource.close(); } catch (e) {}
+        facilitatorEventSource = null;
+      }
+    };
+  } catch (err) {
+    facilitatorSseActive = false;
+    facilitatorEventSource = null;
+  }
 }
 
 let gameState = null;
@@ -1001,6 +1022,21 @@ function resetPlayerUrlDefault() {
   showToast('URL direset ke default (' + defaultUrl + ')', 'info');
 }
 
+let facilitatorPollTimeout = null;
+
+function scheduleFacilitatorPoll() {
+  if (facilitatorPollTimeout) clearTimeout(facilitatorPollTimeout);
+  const baseInterval = facilitatorSseActive ? 3500 : 1800;
+  const jitter = Math.floor(Math.random() * 500);
+
+  facilitatorPollTimeout = setTimeout(async () => {
+    if (!document.hidden && !actionInFlight) {
+      await fetchState();
+    }
+    scheduleFacilitatorPoll();
+  }, baseInterval + jitter);
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
   const isAuthed = await verifyAdminAuth();
   if (!isAuthed) return;
@@ -1009,13 +1045,14 @@ window.addEventListener('DOMContentLoaded', async () => {
   initFacilitatorRealtimeStream();
   await fetchState();
 
-  // Active fallback polling: checks every 1500ms when screen active
-  setInterval(() => {
-    if (!document.hidden) fetchState();
-  }, 1500);
+  // Dynamic jittered polling fallback
+  scheduleFacilitatorPoll();
 
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) fetchState();
+    if (!document.hidden) {
+      fetchState();
+      scheduleFacilitatorPoll();
+    }
   });
 
   // Operator ergonomics: Escape closes modal
