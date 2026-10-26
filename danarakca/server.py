@@ -69,12 +69,16 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_header('Expires', '0')
         super().end_headers()
 
+    def log_message(self, format, *args):
+        if os.environ.get('DANARAKCA_VERBOSE_LOG') == '1':
+            super().log_message(format, *args)
+
     def do_OPTIONS(self):
         self.send_response(200)
         self.end_headers()
 
     def send_json(self, data, status=200):
-        body = json.dumps(data, ensure_ascii=False).encode('utf-8')
+        body = json.dumps(data, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
         self.send_response(status)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
@@ -105,7 +109,7 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
         query = urllib.parse.parse_qs(parsed.query)
 
         if path.startswith('/api/'):
-            engine.refresh_state()
+            engine.refresh_state(force=('bust' in query))
 
         # API Routes
         if path == '/api/state':
@@ -226,8 +230,6 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
                 return self.send_error_json('ID atau Password Fasilitator salah!', 401)
 
             elif path == '/api/state/sync':
-                if is_admin and body.get('client_sync'):
-                    engine.sync_state(client_sync=body.get('client_sync'))
                 return self.send_json({'success': True, 'data': engine.get_public_state()})
 
             elif path == '/api/player/sync':

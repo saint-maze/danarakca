@@ -4,6 +4,17 @@ const LIVE_CHANNEL = 'danarakca_live_fafc19b30c66';
 let liveEventSource = null;
 let lastProcessedCardRound = -1;
 let currentLiveChannel = null;
+let localBus = null;
+try {
+  if (typeof BroadcastChannel !== 'undefined') {
+    localBus = new BroadcastChannel('danarakca_live_bus');
+    localBus.onmessage = (e) => {
+      if (e.data && e.data.event) {
+        handleRealtimeEvent(e.data, Date.now() / 1000);
+      }
+    };
+  }
+} catch (e) {}
 
 let currentUser = null; // { code, name }
 let gameState = null;
@@ -98,6 +109,13 @@ function handleRealtimeEvent(msg, sentAtSec) {
       gameState.stage_input_open = true;
       updateHeaderRoundInfo();
       updateStageInputStatus();
+    }
+    fetchStateAndParticipant();
+  } else if (msg.event === 'MODE_CHANGED') {
+    if (gameState) {
+      if (msg.total_stages) gameState.total_stages = msg.total_stages;
+      if (msg.total_rounds) gameState.total_rounds = msg.total_rounds;
+      updateHeaderRoundInfo();
     }
     fetchStateAndParticipant();
   } else if (msg.event === 'GAME_RESET') {

@@ -127,6 +127,89 @@ function initCharts() {
 }
 
 // Realtime Stream via SSE with Error Handling & Auto Fallback
+let localBus = null;
+try {
+  if (typeof BroadcastChannel !== 'undefined') {
+    localBus = new BroadcastChannel('danarakca_live_bus');
+    localBus.onmessage = (e) => {
+      if (e.data && e.data.state) {
+        applyIncomingState(e.data.state);
+      } else if (e.data && e.data.event) {
+        handleBroadcastLiveEvent(e.data, Date.now() / 1000);
+      }
+    };
+  }
+} catch (e) {}
+
+function handleBroadcastLiveEvent(msg, sentAtSec) {
+  if (!msg || !msg.event) return;
+  if (sentAtSec && (Date.now() / 1000 - sentAtSec) > 60) return;
+
+  if (gameState) {
+    const curSess = gameState.session_id || 0;
+    const msgSess = msg.session_id || 0;
+    const curVer = gameState.state_version || 0;
+    const msgVer = msg.state_version || 0;
+    if (msg.event === 'GAME_RESET') {
+      if (msgSess && msgSess <= curSess) return;
+    } else {
+      if (msgSess && curSess && msgSess < curSess) return;
+      if (msgSess === curSess && msgVer && curVer >= msgVer) return;
+    }
+  }
+
+  if (msg.event === 'CARD_DRAWN' && gameState) {
+    const round = msg.round || msg.current_round;
+    const card = msg.card || (msg.card_entry && msg.card_entry.card);
+    const returns = msg.returns || (msg.card_entry && msg.card_entry.returns);
+    if (round && round > (gameState.current_round || 0) && card) {
+      const prevLast = gameState.last_drawn_card;
+      if (prevLast && prevLast.card) {
+        gameState.recent_cards = [prevLast, ...(gameState.recent_cards || [])].slice(0, 5);
+      }
+      gameState.current_round = round;
+      if (msg.stage) gameState.current_stage = msg.stage;
+      gameState.stage_input_open = false;
+      gameState.last_drawn_card = {
+        round: round,
+        stage: gameState.current_stage,
+        card_id: card.id,
+        card: card,
+        returns: returns || {}
+      };
+      if (Array.isArray(msg.leaderboard_top10) && msg.leaderboard_top10.length > 0) {
+        gameState.leaderboard_top10 = msg.leaderboard_top10;
+      }
+      if (Array.isArray(msg.investor_tangguh_top5) && msg.investor_tangguh_top5.length > 0) {
+        gameState.investor_tangguh_top5 = msg.investor_tangguh_top5;
+      }
+      if (msg.asset_history) {
+        gameState.asset_history = msg.asset_history;
+      }
+      renderBroadcast();
+    }
+  } else if (msg.event === 'STAGE_INPUT_TOGGLED' && gameState) {
+    gameState.stage_input_open = Boolean(msg.stage_input_open);
+    if (msg.current_stage) gameState.current_stage = msg.current_stage;
+    renderBroadcast();
+  } else if (msg.event === 'STAGE_ADVANCED' && gameState) {
+    if (msg.current_stage) gameState.current_stage = msg.current_stage;
+    gameState.stage_input_open = true;
+    renderBroadcast();
+  } else if (msg.event === 'MODE_CHANGED' && gameState) {
+    if (msg.total_stages) gameState.total_stages = msg.total_stages;
+    if (msg.total_rounds) gameState.total_rounds = msg.total_rounds;
+    renderBroadcast();
+  } else if (msg.event === 'GAME_RESET') {
+    lastRenderedCardId = null;
+    lastRecentCardsHash = '';
+    lastLeaderboardHash = '';
+    lastChartsHash = '';
+  }
+
+  fetchState(true);
+}
+
 function initRealtimeStream() {
   const channel = (gameState && gameState.live_channel) || LIVE_CHANNEL;
   if (broadcastEventSource) {
@@ -147,8 +230,11 @@ function initRealtimeStream() {
       try {
         const raw = JSON.parse(e.data);
         if (raw.event !== 'message' || !raw.message) return;
-        fetchState();
-      } catch (err) {}
+        const msg = typeof raw.message === 'string' ? JSON.parse(raw.message) : raw.message;
+        handleBroadcastLiveEvent(msg, raw.time);
+      } catch (err) {
+        fetchState(true);
+      }
     };
     broadcastEventSource.onerror = () => {
       sseErrors++;
@@ -193,7 +279,7 @@ function applyIncomingState(newState) {
       if ((!newState.investor_tangguh_top5 || newState.investor_tangguh_top5.length === 0) && (gameState.investor_tangguh_top5 && gameState.investor_tangguh_top5.length > 0)) {
         newState.investor_tangguh_top5 = gameState.investor_tangguh_top5;
       }
-      if (newVer < curVer) return;
+      if (newVer < curVer && (newState.current_round || 0) <= (gameState.current_round || 0)) return;
     }
   }
 
@@ -201,9 +287,14 @@ function applyIncomingState(newState) {
   renderBroadcast();
 }
 
-async function fetchState() {
+let fetchInFlight = false;
+
+async function fetchState(bust = false) {
+  if (fetchInFlight && !bust) return;
+  fetchInFlight = true;
   try {
-    const res = await fetch('/api/state', { cache: 'no-store' });
+    const url = bust ? '/api/state?bust=1' : '/api/state';
+    const res = await fetch(url, { cache: 'no-store' });
     const json = await res.json();
     if (json.success && json.data) {
       applyIncomingState(json.data);
@@ -211,6 +302,8 @@ async function fetchState() {
   } catch (err) {
     const syncEl = document.getElementById('syncStatusText');
     if (syncEl) syncEl.innerText = 'Menghubungkan...';
+  } finally {
+    fetchInFlight = false;
   }
 }
 
@@ -501,15 +594,22 @@ function updateCharts() {
 }
 
 // Fullscreen Toggle
-const FS_EXPAND_PATH = 'M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15';
-const FS_COMPRESS_PATH = 'M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25';
+const FS_EXPAND_PATH = 'M9 5H5v4M15 5h4v4M9 19H5v-4M15 19h4v-4';
+const FS_COMPRESS_PATH = 'M5 9h4V5M19 9h-4V5M5 15h4v4M19 15h-4v4';
 
 function updateFullscreenIcon() {
+  const isFs = !!document.fullscreenElement;
+  const btn = document.getElementById('btnFullscreen');
+  if (btn) {
+    const label = isFs ? 'Keluar Layar Penuh' : 'Layar Penuh';
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+  }
   const svg = document.getElementById('fullscreenIconSvg');
   if (!svg) return;
   const path = svg.querySelector('path');
   if (!path) return;
-  path.setAttribute('d', document.fullscreenElement ? FS_COMPRESS_PATH : FS_EXPAND_PATH);
+  path.setAttribute('d', isFs ? FS_COMPRESS_PATH : FS_EXPAND_PATH);
 }
 
 function toggleFullscreen() {

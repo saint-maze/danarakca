@@ -2,28 +2,32 @@
 
 const LIVE_CHANNEL = 'danarakca_live_fafc19b30c66';
 let facilitatorEventSource = null;
+let localBus = null;
+try {
+  if (typeof BroadcastChannel !== 'undefined') {
+    localBus = new BroadcastChannel('danarakca_live_bus');
+    localBus.onmessage = (e) => {
+      if (e.data && e.data.state && !actionInFlight) {
+        applyIncomingState(e.data.state, false);
+      }
+    };
+  }
+} catch (e) {}
 
 function broadcastLivePush(eventType, payload = {}) {
   try {
-    const channel = (gameState && gameState.live_channel) || LIVE_CHANNEL;
-    const body = JSON.stringify({
-      event: eventType,
-      session_id: gameState ? gameState.session_id : 1,
-      current_round: gameState ? gameState.current_round : 0,
-      current_stage: gameState ? gameState.current_stage : 1,
-      stage_input_open: gameState ? gameState.stage_input_open : false,
-      timestamp: new Date().toISOString(),
-      ...payload
-    });
-    fetch(`https://ntfy.sh/${channel}`, {
-      method: 'POST',
-      body: body,
-      headers: {
-        'Title': `Danarakca: ${eventType}`,
-        'Priority': 'urgent'
-      },
-      mode: 'cors'
-    }).catch(() => {});
+    if (localBus) {
+      localBus.postMessage({
+        event: eventType,
+        state: gameState,
+        session_id: gameState ? gameState.session_id : 1,
+        state_version: gameState ? gameState.state_version : 1,
+        current_round: gameState ? gameState.current_round : 0,
+        current_stage: gameState ? gameState.current_stage : 1,
+        stage_input_open: gameState ? gameState.stage_input_open : false,
+        ...payload
+      });
+    }
   } catch (e) {}
 }
 
@@ -48,8 +52,14 @@ function initFacilitatorRealtimeStream() {
       try {
         const raw = JSON.parse(e.data);
         if (raw.event !== 'message' || !raw.message) return;
+        const msg = typeof raw.message === 'string' ? JSON.parse(raw.message) : raw.message;
+        if (gameState && msg && msg.session_id === gameState.session_id && msg.state_version && gameState.state_version >= msg.state_version) {
+          return;
+        }
         fetchState();
-      } catch (err) {}
+      } catch (err) {
+        fetchState();
+      }
     };
     facilitatorEventSource.onerror = () => {
       facilitatorSseErrors++;
@@ -69,6 +79,9 @@ let gameState = null;
 let currentTab = 'top10'; // 'top10' or 'tangguh'
 let chartTopPlayers = null;
 let chartAssetIndexes = null;
+let lastRecentCardsHash = '';
+let lastLeaderboardHash = '';
+let lastChartsHash = '';
 
 function formatRupiah(num) {
   if (num === null || num === undefined) return 'Rp 0';
@@ -93,6 +106,7 @@ function initCharts() {
   const chartOptionsBase = {
     responsive: true,
     maintainAspectRatio: false,
+    animation: false,
     plugins: {
       legend: {
         position: 'top',
@@ -493,10 +507,18 @@ function setImpactUI(assetKey, totalReturn, baseReturn, cardEffect) {
 
 function renderRecentCards() {
   const container = document.getElementById('recentCardsList');
+  if (!container) return;
   if (!gameState.recent_cards || gameState.recent_cards.length === 0) {
-    container.innerHTML = '<div class="text-caption text-smoke italic py-2">Belum ada riwayat kartu sebelumnya.</div>';
+    if (lastRecentCardsHash !== 'EMPTY') {
+      lastRecentCardsHash = 'EMPTY';
+      container.innerHTML = '<div class="text-caption text-smoke italic py-2">Belum ada riwayat kartu sebelumnya.</div>';
+    }
     return;
   }
+
+  const hash = gameState.recent_cards.map(c => `${c.round}:${c.card_id || (c.card && c.card.id)}`).join('|');
+  if (hash === lastRecentCardsHash) return;
+  lastRecentCardsHash = hash;
 
   container.innerHTML = gameState.recent_cards.map(c => `
     <div class="flex items-center justify-between p-3 panel bg-obsidian text-caption">
@@ -513,6 +535,7 @@ function renderRecentCards() {
 
 function switchLbTab(tab) {
   currentTab = tab;
+  lastLeaderboardHash = '';
   const btn10 = document.getElementById('btnTabTop10');
   const btnT = document.getElementById('btnTabTangguh');
   const title = document.getElementById('lbTabTitle');
@@ -556,15 +579,22 @@ function renderLeaderboard() {
   }
 
   if (list.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="6" class="text-center py-10 text-smoke italic">
-          Menunggu peserta mendaftar...
-        </td>
-      </tr>
-    `;
+    if (lastLeaderboardHash !== 'EMPTY') {
+      lastLeaderboardHash = 'EMPTY';
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" class="text-center py-10 text-smoke italic">
+            Menunggu peserta mendaftar...
+          </td>
+        </tr>
+      `;
+    }
     return;
   }
+
+  const lbHash = `${currentTab}:${gameState.current_round}:${list.map(p => `${p.code || p.name}:${Math.round(p.current_value || 0)}:${p.current_rank}:${p.prev_rank}`).join('|')}`;
+  if (lbHash === lastLeaderboardHash) return;
+  lastLeaderboardHash = lbHash;
 
   tbody.innerHTML = list.map((p, idx) => {
     if (!p) return '';
@@ -608,13 +638,16 @@ function updateCharts() {
   if (!gameState || !chartTopPlayers || !chartAssetIndexes) return;
 
   const currentRound = gameState.current_round || 0;
+  const top5 = (gameState.leaderboard_top10 || []).slice(0, 5);
+  const chartsHash = `${gameState.session_id}:${currentRound}:${top5.map(p => `${p.code || p.name}:${Math.round(p.current_value || 0)}`).join('|')}`;
+  if (chartsHash === lastChartsHash) return;
+  lastChartsHash = chartsHash;
+
   const labels = ['Awal'];
   for (let r = 1; r <= currentRound; r++) {
     labels.push(`K${r}`);
   }
 
-  // Top 5 Players
-  const top5 = (gameState.leaderboard_top10 || []).slice(0, 5);
   const lineColors = ['#f3f3f3', '#8fb3d9', '#8fd9a8', '#d9c38f', '#b38fd9'];
 
   const playerDatasets = top5.map((p, idx) => ({
@@ -694,7 +727,7 @@ async function drawCard() {
       if (btn && (!gameState || gameState.current_round < gameState.total_rounds)) {
         btn.disabled = false;
       }
-    }, 1200);
+    }, 250);
   }
 }
 
@@ -891,7 +924,10 @@ async function seedMockUsers(count = 200) {
     });
     const json = await res.json();
     if (json.success) {
+      lastLeaderboardHash = '';
+      lastChartsHash = '';
       applyIncomingState(json.state, true);
+      broadcastLivePush('USERS_SEEDED', {});
       showToast(`Berhasil menambahkan ${count} bot peserta`, 'success');
     } else {
       showToast(json.error || 'Gagal membuat bot peserta', 'error');
@@ -936,6 +972,9 @@ async function confirmReset() {
     });
     const json = await res.json();
     if (json.success) {
+      lastRecentCardsHash = '';
+      lastLeaderboardHash = '';
+      lastChartsHash = '';
       applyIncomingState(json.state, true);
       broadcastLivePush('GAME_RESET', {
         session_id: gameState ? gameState.session_id : 1,
