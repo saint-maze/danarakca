@@ -83,6 +83,15 @@ let lastRecentCardsHash = '';
 let lastLeaderboardHash = '';
 let lastChartsHash = '';
 
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function formatRupiah(num) {
   if (num === null || num === undefined) return 'Rp 0';
   return 'Rp ' + Math.round(num).toLocaleString('id-ID');
@@ -217,7 +226,9 @@ function showToast(msg, type = 'info') {
   const toast = document.createElement('div');
   const borderCol = type === 'error' ? 'border-loss text-loss' : (type === 'success' ? 'border-pulse text-chalk' : 'border-graphite text-chalk');
   toast.className = `panel px-4 py-3 bg-carbon text-caption pointer-events-auto shadow-2xl flex items-center gap-2.5 rounded-card card-in ${borderCol}`;
-  toast.innerHTML = `<span>${msg}</span>`;
+  const span = document.createElement('span');
+  span.textContent = String(msg ?? '');
+  toast.appendChild(span);
   container.appendChild(toast);
   setTimeout(() => {
     toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
@@ -524,11 +535,11 @@ function renderRecentCards() {
     <div class="flex items-center justify-between p-3 panel bg-obsidian text-caption">
       <div class="flex items-center gap-3">
         <span class="font-mono text-ash text-[11px] border border-graphite px-1.5 py-0.5 rounded-tag">
-          Q${c.round}
+          Q${Number(c.round) || 0}
         </span>
-        <span class="text-chalk">${c.card.title}</span>
+        <span class="text-chalk">${escapeHtml(c.card?.title)}</span>
       </div>
-      <span class="meta text-[11px]">${c.card.category}</span>
+      <span class="meta text-[11px]">${escapeHtml(c.card?.category)}</span>
     </div>
   `).join('');
 }
@@ -624,7 +635,7 @@ function renderLeaderboard() {
         <td class="py-2.5 px-1 text-center font-mono text-ash">${rankNum}</td>
         <td class="py-2.5 px-1 text-center">${deltaHtml}</td>
         <td class="py-2.5 px-2">
-          <div class="text-chalk truncate max-w-[150px] sm:max-w-none font-medium">${p.name || 'Peserta'}</div>
+          <div class="text-chalk truncate max-w-[150px] sm:max-w-none font-medium">${escapeHtml(p.name || 'Peserta')}</div>
         </td>
         <td class="py-2.5 px-2 text-right font-mono text-chalk">${formatRupiah(currentVal)}</td>
         <td class="py-2.5 px-1 text-right font-mono ${returnColor}">${returnSign}</td>

@@ -1,92 +1,22 @@
 # Danarakca
 
-Aplikasi simulasi portofolio investasi makroekonomi berbasis web untuk edukasi finansial DJPPR Kementerian Keuangan.
-
----
+Aplikasi web simulasi manajemen portofolio investasi makroekonomi untuk edukasi finansial DJPPR Kementerian Keuangan.
 
 ## Spesifikasi Teknis
 
-- **Backend**: Python 3.8+ (pustaka standar: `http.server`, `socketserver`, `json`, `csv`, `threading`).
-- **Frontend**: HTML5, Vanilla JavaScript, CSS3 (Tailwind CSS CDN, Chart.js).
-- **Penyimpanan Status**: Berbasis berkas JSON (`danarakca/data/state.json`).
-- **Kompatibilitas Layar**:
-  - Layar Fasilitator: Responsif untuk layar proyektor laptop hingga smartphone operator.
-  - Layar Peserta: Mobile-first dengan slider persentase alokasi dan umpan balik haptik.
+- Backend: Python 3.8+ (`danarakca/server.py` untuk server HTTP multi-thread dan `api/index.py` untuk Vercel Serverless Functions).
+- Mesin Simulasi: `danarakca/game_engine.py` untuk kalkulasi nilai portofolio, imbal hasil instrumen, efek kartu skenario, Max Drawdown, dan papan peringkat.
+- Penyimpanan Status: Upstash Redis / Vercel KV melalui REST API pada lingkungan produksi dan berkas JSON (`danarakca/data/state.json`) sebagai penyimpanan lokal.
+- Sinkronisasi Real-Time: Server-Sent Events (SSE) dan `BroadcastChannel` dengan cadangan polling adaptif.
+- Frontend: HTML5, Vanilla JavaScript, Tailwind CSS, dan Chart.js.
 
----
+## Variabel Lingkungan
 
-## Struktur Direktori
-
-```text
-Game Danarakca/
-├── danarakca/
-│   ├── data/
-│   │   ├── cards.json         # Basis data 100 kartu skenario makroekonomi
-│   │   ├── config.json        # Nilai dasar aset, modal awal, dan kredensial admin
-│   │   └── state.json         # Status permainan berjalan dan riwayat peserta
-│   ├── static/
-│   │   ├── facilitator.html   # Tampilan kendali fasilitator dan proyektor
-│   │   ├── facilitator.js     # Logika leaderboard, kontrol putaran, dan grafik
-│   │   ├── player.html        # Antarmuka input peserta (smartphone)
-│   │   ├── player.js          # Logika alokasi portofolio peserta
-│   │   ├── admin-login.html   # Autentikasi fasilitator
-│   │   ├── index.html         # Portal pemilihan peran
-│   │   ├── style.css          # Desain visual, background GPU-accelerated
-│   │   └── img/               # Asset logo dan ikon
-│   ├── game_engine.py         # Perhitungan portofolio, scoring, dan leaderboard
-│   └── server.py              # HTTP server dan REST API
-├── Dockerfile                 # Konfigurasi container Docker
-├── Procfile                   # Konfigurasi proses Render / Heroku
-├── wrangler.toml              # Konfigurasi Cloudflare Pages
-├── start_server_v2.bat        # Skrip inisialisasi Windows
-├── start_server_v2.sh         # Skrip inisialisasi Linux / macOS
-└── README.md
-```
-
----
-
-## Menjalankan di Komputer Lokal
-
-### Prasyarat
-Python 3.8 atau versi lebih baru terpasang di sistem.
-
-### Windows
-Jalankan berkas:
-```cmd
-start_server_v2.bat
-```
-
-### Linux / macOS
-```bash
-bash start_server_v2.sh
-```
-Atau jalankan perintah langsung:
-```bash
-python3 danarakca/server.py 8080
-```
-
-### URL Akses Lokal
-- Portal Utama: `http://localhost:8080/`
-- Layar Fasilitator: `http://localhost:8080/facilitator.html`
-- Layar Peserta: `http://localhost:8080/player.html`
-- Login Admin: `http://localhost:8080/admin`
-
-
-
-## Alur Permainan
-
-1. **Registrasi**:
-   - Fasilitator menampilkan QR Code pada `facilitator.html`.
-   - Peserta membuka `player.html` dari smartphone dan memasukkan ID peserta (`P01` s/d `P200`).
-2. **Tahap 1 (Alokasi Modal Awal)**:
-   - Peserta membagi alokasi modal 100% ke 5 instrumen: Sukuk Negara, Saham Blue Chip, RDPU, Emas, Reksa Dana Campuran.
-3. **Putaran 1–10**:
-   - Fasilitator menutup input alokasi dan mengocok kartu skenario (`K001`–`K100`).
-   - Dampak ekonomi kartu diterapkan pada nilai aset tiap peserta.
-   - Leaderboard diperbarui secara real-time.
-4. **Rebalancing (Awal Tahap 2 & Tahap 3)**:
-   - Setelah putaran 10 dan 20, fasilitator membuka sesi rebalancing untuk menyusun ulang komposisi portofolio.
-5. **Evaluasi Akhir (Putaran 30)**:
-   - Pengumuman pemenang akumulasi aset tertinggi.
-   - Penghargaan **Investor Tangguh** untuk peserta dengan nilai drawdown terendah.
-   - Ekspor rekap data ke CSV melalui tombol di layar fasilitator.
+| Variabel | Fungsi |
+| :--- | :--- |
+| `UPSTASH_REDIS_REST_URL` / `KV_REST_API_URL` | Endpoint REST Redis/KV untuk persistensi status permainan. |
+| `UPSTASH_REDIS_REST_TOKEN` / `KV_REST_API_TOKEN` | Token autentikasi REST Redis/KV. |
+| `DANARAKCA_ADMIN_USER` | ID login admin (menimpa nilai bawaan `config.json`). |
+| `DANARAKCA_ADMIN_PASSWORD` | Password admin (menimpa nilai bawaan `config.json`). |
+| `DANARAKCA_ADMIN_SECRET` | Kunci HMAC-SHA256 untuk penandatanganan token sesi admin. |
+| `PORT` | Port HTTP server (bawaan: `8080`). |

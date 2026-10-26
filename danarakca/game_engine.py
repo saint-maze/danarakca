@@ -3,6 +3,8 @@ import random
 import os
 import copy
 import hashlib
+import math
+import re
 import time
 import threading
 from datetime import datetime
@@ -55,8 +57,34 @@ class GameEngine:
     LIVE_CHANNEL = 'danarakca_live_' + hashlib.md5(b'danarakca_2026_pulse_channel').hexdigest()[:12]
 
     @staticmethod
+    def sanitize_name(name):
+        cleaned = re.sub(r'[<>"\'`\x00-\x1f\x7f]', '', str(name or ''))
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        return cleaned[:60]
+
+    @staticmethod
+    def sanitize_allocation(allocation):
+        if not isinstance(allocation, dict):
+            return None
+        assets = ('sukuk', 'saham', 'rdpu', 'emas', 'campuran')
+        clean_alloc = {}
+        total = 0.0
+        for a in assets:
+            try:
+                val = float(allocation.get(a, 0))
+            except (TypeError, ValueError):
+                return None
+            if not math.isfinite(val) or val < 0.0 or val > 100.0:
+                return None
+            clean_alloc[a] = val
+            total += val
+        if round(total) != 100:
+            return None
+        return clean_alloc
+
+    @staticmethod
     def make_participant_code(name):
-        clean = (name or '').strip().lower()
+        clean = GameEngine.sanitize_name(name).lower()
         digest = hashlib.md5(clean.encode('utf-8')).hexdigest()[:6].upper()
         return f"T{digest}"
 
@@ -513,7 +541,9 @@ class GameEngine:
                     for p_code, p_data in client_sync['participants_sync'].items():
                         if not isinstance(p_data, dict) or not p_data.get('name'):
                             continue
-                        name = p_data['name'].strip()
+                        name = self.sanitize_name(p_data['name'])
+                        if not name:
+                            continue
                         det_code = self.make_participant_code(name)
                         if det_code not in self.state['participants']:
                             self.state['participants'][det_code] = {
@@ -532,9 +562,11 @@ class GameEngine:
                         if isinstance(inc_allocs, dict):
                             cur_allocs = self.state['participants'][det_code].setdefault('allocations', {})
                             for stg, alloc in inc_allocs.items():
-                                if str(stg) not in cur_allocs and isinstance(alloc, dict):
-                                    cur_allocs[str(stg)] = alloc
-                                    changed = True
+                                if str(stg) in ('1', '2', '3') and str(stg) not in cur_allocs:
+                                    valid_alloc = self.sanitize_allocation(alloc)
+                                    if valid_alloc:
+                                        cur_allocs[str(stg)] = valid_alloc
+                                        changed = True
 
                 if changed:
                     self._rebuild_simulation(cur_cards)
@@ -542,34 +574,39 @@ class GameEngine:
             # 3. Sync individual active participant (from player.js)
             if isinstance(participant_sync, dict) and participant_sync.get('name'):
                 p_sess = int(participant_sync.get('session_id') or 0)
-                name = participant_sync['name'].strip()
-                det_code = self.make_participant_code(name)
-                session_matches = (p_sess == cur_session) or (p_sess == 0) or (cur_session <= 1)
+                name = self.sanitize_name(participant_sync['name'])
+                if name:
+                    det_code = self.make_participant_code(name)
+                    session_matches = (p_sess == cur_session) or (p_sess == 0) or (cur_session <= 1)
 
-                if not self.is_participant_session_expired(name, p_sess):
-                    if det_code not in self.state['participants']:
-                        self.state['participants'][det_code] = {
-                            'code': det_code,
-                            'name': name,
-                            'allocations': {},
-                            'current_value': self.config['initial_capital'],
-                            'prev_value': self.config['initial_capital'],
-                            'current_rank': 1,
-                            'prev_rank': 1,
-                            'max_drawdown': 0.0,
-                            'history': []
-                        }
-                        changed = True
+                    if not self.is_participant_session_expired(name, p_sess):
+                        if det_code not in self.state['participants']:
+                            self.state['participants'][det_code] = {
+                                'code': det_code,
+                                'name': name,
+                                'allocations': {},
+                                'current_value': self.config['initial_capital'],
+                                'prev_value': self.config['initial_capital'],
+                                'current_rank': 1,
+                                'prev_rank': 1,
+                                'max_drawdown': 0.0,
+                                'history': []
+                            }
+                            changed = True
 
-                    if session_matches and isinstance(participant_sync.get('allocations'), dict):
-                        cur_allocs = self.state['participants'][det_code].setdefault('allocations', {})
-                        for stg, alloc in participant_sync['allocations'].items():
-                            if isinstance(alloc, dict) and str(stg) not in cur_allocs:
-                                cur_allocs[str(stg)] = alloc
-                                changed = True
+                        if session_matches and isinstance(participant_sync.get('allocations'), dict):
+                            cur_allocs = self.state['participants'][det_code].setdefault('allocations', {})
+                            max_stage = int(self.state.get('current_stage', 1))
+                            for stg, alloc in participant_sync['allocations'].items():
+                                stg_str = str(stg)
+                                if stg_str in ('1', '2', '3') and int(stg_str) <= max_stage and stg_str not in cur_allocs:
+                                    valid_alloc = self.sanitize_allocation(alloc)
+                                    if valid_alloc:
+                                        cur_allocs[stg_str] = valid_alloc
+                                        changed = True
 
-                    if changed:
-                        self._rebuild_simulation()
+                        if changed:
+                            self._rebuild_simulation()
 
             if changed:
                 self._public_state_cache = None
@@ -620,7 +657,7 @@ class GameEngine:
 
     def register_participant(self, name, code=None):
         with self.lock:
-            name = (name or '').strip()
+            name = self.sanitize_name(name)
             if not name:
                 raise ValueError("Nama peserta / tim tidak boleh kosong")
 
@@ -650,7 +687,7 @@ class GameEngine:
 
     def submit_allocation(self, code_or_name, stage, allocation, name=None):
         with self.lock:
-            key = str(code_or_name or name or '').strip()
+            key = self.sanitize_name(code_or_name or name or '')
             p = self.state['participants'].get(key.upper())
             if not p:
                 for existing in list(self.state['participants'].values()):
@@ -658,13 +695,14 @@ class GameEngine:
                         p = existing
                         break
             if not p and name:
+                clean_name = self.sanitize_name(name)
                 for existing in list(self.state['participants'].values()):
-                    if existing['name'].strip().lower() == str(name).strip().lower():
+                    if existing['name'].strip().lower() == clean_name.lower():
                         p = existing
                         break
             if not p:
                 # Self-heal on serverless container: auto-register participant instead of failing
-                reg_name = (name or key).strip()
+                reg_name = self.sanitize_name(name or key)
                 if not reg_name:
                     raise ValueError("Nama peserta tidak valid")
                 p = self.register_participant(name=reg_name)
@@ -678,13 +716,15 @@ class GameEngine:
             if not self.state['stage_input_open']:
                 raise ValueError(f"Input alokasi Tahap {stage} sudah ditutup oleh Fasilitator")
 
-            # Validate allocation
+            if not isinstance(allocation, dict):
+                raise ValueError("Data alokasi tidak valid")
+
             assets = ['sukuk', 'saham', 'rdpu', 'emas', 'campuran']
             clean_alloc = {}
-            total = 0
+            total = 0.0
             for a in assets:
                 val = float(allocation.get(a, 0))
-                if val < 0 or val > 100:
+                if not math.isfinite(val) or val < 0 or val > 100:
                     raise ValueError(f"Alokasi untuk {a} harus antara 0 dan 100")
                 clean_alloc[a] = val
                 total += val
@@ -947,6 +987,10 @@ class GameEngine:
 
     def seed_mock_participants(self, count=200):
         """Generates realistic mock participants with diverse strategies for demo/stress-testing."""
+        try:
+            count = min(max(1, int(count or 200)), 500)
+        except (TypeError, ValueError):
+            count = 200
         with self.lock:
             strategies = [
                 {'name': 'Konservatif Sukuk', 'alloc': {'sukuk': 50, 'saham': 10, 'rdpu': 25, 'emas': 10, 'campuran': 5}},

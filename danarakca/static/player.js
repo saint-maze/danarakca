@@ -220,7 +220,9 @@ function showToast(msg, type = 'info') {
   const toast = document.createElement('div');
   const borderCol = type === 'error' ? 'border-loss text-loss' : (type === 'success' ? 'border-pulse text-chalk' : 'border-graphite text-chalk');
   toast.className = `panel px-4 py-3 bg-carbon text-caption pointer-events-auto shadow-2xl flex items-center gap-2.5 rounded-card card-in ${borderCol}`;
-  toast.innerHTML = `<span>${msg}</span>`;
+  const span = document.createElement('span');
+  span.textContent = String(msg ?? '');
+  toast.appendChild(span);
   container.appendChild(toast);
   setTimeout(() => {
     toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
@@ -537,7 +539,7 @@ function updateStageInputStatus() {
     return;
   }
 
-  const currentStage = gameState.current_stage;
+  const currentStage = Number(gameState.current_stage) || 1;
 
   if (isOpen) {
     banner.className = 'p-3.5 rounded-card hairline bg-carbon text-caption flex items-center justify-between gap-3';

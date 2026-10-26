@@ -8,19 +8,31 @@ import mimetypes
 import csv
 import io
 import hashlib
+import hmac
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from game_engine import GameEngine
 
 PORT = 8080
+MAX_BODY_BYTES = 262144
 STATIC_DIR = os.path.join(os.path.dirname(__file__), 'static')
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 
 engine = GameEngine(DATA_DIR)
 
-ADMIN_SALT = "danarakca_salt_2026"
+ADMIN_SALT = os.environ.get('DANARAKCA_ADMIN_SECRET', 'danarakca_salt_2026')
+
+
+def get_admin_credentials():
+    admin_cfg = engine.config.get('admin', {})
+    expected_u = os.environ.get('DANARAKCA_ADMIN_USER') or admin_cfg.get('username', 'admin')
+    expected_p = os.environ.get('DANARAKCA_ADMIN_PASSWORD') or admin_cfg.get('password', 'danarakca2026')
+    return str(expected_u), str(expected_p)
+
 
 def make_admin_token(u, p):
-    return hashlib.sha256(f"{u}:{p}:{ADMIN_SALT}".encode()).hexdigest()
+    msg = f"{u}:{p}".encode('utf-8')
+    return hmac.new(ADMIN_SALT.encode('utf-8'), msg, hashlib.sha256).hexdigest()
+
 
 def check_admin_token(headers):
     token = headers.get('X-Admin-Token', '')
@@ -28,10 +40,18 @@ def check_admin_token(headers):
         auth = headers.get('Authorization', '')
         if auth.startswith('Bearer '):
             token = auth[7:]
-    admin_cfg = engine.config.get('admin', {})
-    expected_u = admin_cfg.get('username', 'admin')
-    expected_p = admin_cfg.get('password', 'danarakca2026')
-    return token == make_admin_token(expected_u, expected_p)
+    if not token or not isinstance(token, str):
+        return False
+    expected_u, expected_p = get_admin_credentials()
+    expected_token = make_admin_token(expected_u, expected_p)
+    return hmac.compare_digest(token.strip(), expected_token)
+
+
+def sanitize_csv_cell(val):
+    s = str(val if val is not None else '')
+    if s and s[0] in ('=', '+', '-', '@', '\t', '\r'):
+        return "'" + s
+    return s
 
 class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -50,10 +70,14 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
         return parsed
 
     def end_headers(self):
-        # Enable CORS for convenience
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Token, Authorization')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('X-Frame-Options', 'SAMEORIGIN')
+        self.send_header('Referrer-Policy', 'strict-origin-when-cross-origin')
+        self.send_header('Permissions-Policy', 'camera=(), geolocation=(), microphone=(), focus-without-user-activation=()')
+        self.send_header('Content-Security-Policy', "frame-ancestors 'self'; object-src 'none'; base-uri 'self'")
         # Smart caching: cache images/fonts, keep API fresh
         if hasattr(self, 'path') and self.path:
             lower_path = self.path.lower()
@@ -90,10 +114,13 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def parse_json_body(self):
         content_length = int(self.headers.get('Content-Length', 0))
-        if content_length == 0:
+        if content_length <= 0:
             return {}
+        if content_length > MAX_BODY_BYTES:
+            raise ValueError("Ukuran payload melebihi batas maksimum")
         raw_body = self.rfile.read(content_length).decode('utf-8')
-        return json.loads(raw_body)
+        parsed = json.loads(raw_body)
+        return parsed if isinstance(parsed, dict) else {}
 
     def do_HEAD(self):
         parsed = self.get_effective_path()
@@ -118,12 +145,13 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
         elif path == '/api/leaderboard':
             raw_limit = query.get('limit', ['100'])
             limit = int(raw_limit[0]) if raw_limit and raw_limit[0].isdigit() else 100
+            limit = min(max(1, limit), 500)
             lb = engine.get_leaderboard(limit=limit)
             return self.send_json({'success': True, 'data': lb})
 
         elif path.startswith('/api/participant/'):
             identifier = path.split('/')[-1]
-            decoded = urllib.parse.unquote(identifier).strip()
+            decoded = engine.sanitize_name(urllib.parse.unquote(identifier))
             p = engine.state['participants'].get(decoded.upper())
             if not p:
                 for part in engine.state['participants'].values():
@@ -131,7 +159,7 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
                         p = part
                         break
             if not p:
-                name_param = (query.get('name', [''])[0] or '').strip()
+                name_param = engine.sanitize_name(query.get('name', [''])[0] or '')
                 fallback_name = name_param or (decoded if not (len(decoded) <= 4 and decoded.upper().startswith('P') and decoded[1:].isdigit()) else '')
                 if fallback_name:
                     p = engine.register_participant(name=fallback_name)
@@ -161,7 +189,7 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
                 mdd_pct = round(p.get('max_drawdown', 0.0) * 100, 2)
                 writer.writerow([
                     p['current_rank'],
-                    p['name'],
+                    sanitize_csv_cell(p['name']),
                     round(p['current_value']),
                     f"{return_pct}%",
                     f"{mdd_pct}%",
@@ -219,13 +247,11 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
 
             # Admin Authentication Route
             if path == '/api/admin/login':
-                u = body.get('username', '').strip()
-                p = body.get('password', '').strip()
-                admin_cfg = engine.config.get('admin', {})
-                expected_u = admin_cfg.get('username', 'admin')
-                expected_p = admin_cfg.get('password', 'danarakca2026')
-                if u == expected_u and p == expected_p:
-                    token = make_admin_token(u, p)
+                u = str(body.get('username', '')).strip()
+                p = str(body.get('password', '')).strip()
+                expected_u, expected_p = get_admin_credentials()
+                if hmac.compare_digest(u, expected_u) and hmac.compare_digest(p, expected_p):
+                    token = make_admin_token(expected_u, expected_p)
                     return self.send_json({'success': True, 'token': token, 'message': 'Login Fasilitator Berhasil!'})
                 return self.send_error_json('ID atau Password Fasilitator salah!', 401)
 

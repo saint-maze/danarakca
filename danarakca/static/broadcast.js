@@ -24,6 +24,15 @@ function setElementText(id, val) {
   }
 }
 
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Currency & Percentage Formatters
 function formatRupiah(num) {
   if (num === null || num === undefined) return 'Rp 0';
@@ -456,11 +465,11 @@ function renderRecentCards() {
     <div class="flex items-center justify-between p-2.5 rounded-card bg-obsidian hairline text-caption">
       <div class="flex items-center gap-2 overflow-hidden">
         <span class="font-mono text-ash text-[10px] border border-graphite px-1.5 py-0.5 rounded-tag shrink-0">
-          Q${c.round}
+          Q${Number(c.round) || 0}
         </span>
-        <span class="text-chalk truncate text-xs font-medium">${c.card.title}</span>
+        <span class="text-chalk truncate text-xs font-medium">${escapeHtml(c.card?.title)}</span>
       </div>
-      <span class="meta text-[10px] text-smoke shrink-0 ml-1">${c.card.category}</span>
+      <span class="meta text-[10px] text-smoke shrink-0 ml-1">${escapeHtml(c.card?.category)}</span>
     </div>
   `).join('');
 }
@@ -540,7 +549,7 @@ function renderLeaderboard() {
         <td class="py-2.5 px-1 text-center font-mono text-ash font-medium">${rankNum}</td>
         <td class="py-2.5 px-1 text-center">${deltaHtml}</td>
         <td class="py-2.5 px-2">
-          <div class="text-chalk truncate max-w-[140px] sm:max-w-none font-medium">${p.name || 'Peserta'}</div>
+          <div class="text-chalk truncate max-w-[140px] sm:max-w-none font-medium">${escapeHtml(p.name || 'Peserta')}</div>
         </td>
         <td class="py-2.5 px-2 text-right font-mono text-chalk font-semibold">${formatRupiah(currentVal)}</td>
         <td class="py-2.5 px-1 text-right font-mono ${returnColor}">${returnSign}</td>
@@ -638,6 +647,16 @@ function showQRModal() {
     if (cachedQrUrl === joinUrl && cachedQrHtml) {
       container.innerHTML = cachedQrHtml;
     } else {
+      const renderFallbackLink = () => {
+        container.textContent = '';
+        const link = document.createElement('a');
+        link.href = joinUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.className = 'text-obsidian underline text-xs font-mono';
+        link.textContent = 'Buka Tautan';
+        container.appendChild(link);
+      };
       try {
         if (typeof qrcode === 'function') {
           const qr = qrcode(0, 'M');
@@ -647,10 +666,10 @@ function showQRModal() {
           cachedQrUrl = joinUrl;
           container.innerHTML = cachedQrHtml;
         } else {
-          container.innerHTML = `<a href="${joinUrl}" target="_blank" class="text-obsidian underline text-xs font-mono">Buka Tautan</a>`;
+          renderFallbackLink();
         }
       } catch (e) {
-        container.innerHTML = `<a href="${joinUrl}" target="_blank" class="text-obsidian underline text-xs font-mono">Buka Tautan</a>`;
+        renderFallbackLink();
       }
     }
   }
