@@ -142,7 +142,7 @@ try {
     localBus = new BroadcastChannel('danarakca_live_bus');
     localBus.onmessage = (e) => {
       if (e.data && e.data.state) {
-        applyIncomingState(e.data.state);
+        applyIncomingState(e.data.state, Boolean(e.data.force));
       } else if (e.data && e.data.event) {
         handleBroadcastLiveEvent(e.data, Date.now() / 1000);
       }
@@ -263,7 +263,7 @@ function initRealtimeStream() {
 }
 
 // State Synchronization
-function applyIncomingState(newState) {
+function applyIncomingState(newState, force = false) {
   if (!newState) return;
   if (gameState) {
     const curSess = gameState.session_id || 0;
@@ -273,14 +273,19 @@ function applyIncomingState(newState) {
 
     if (newSess < curSess) return;
 
-    if (newSess === curSess) {
-      // Prevent round rollback
-      if ((newState.current_round || 0) < (gameState.current_round || 0)) {
-        newState.current_round = gameState.current_round;
-        newState.drawn_card_ids = gameState.drawn_card_ids || [];
-        newState.last_drawn_card = gameState.last_drawn_card;
-        newState.recent_cards = gameState.recent_cards || [];
-      }
+    if (!force && newSess === curSess) {
+      const curRound = gameState.current_round || 0;
+      const newRound = newState.current_round || 0;
+      const curTotalP = gameState.total_participants || 0;
+      const newTotalP = newState.total_participants || 0;
+      const curEpoch = gameState.roster_epoch || 0;
+      const newEpoch = newState.roster_epoch || 0;
+
+      // Reject stale/partial container responses that lag behind on rounds or participant count
+      if (newEpoch < curEpoch) return;
+      if (newEpoch === curEpoch && newRound < curRound) return;
+      if (newEpoch === curEpoch && newRound === curRound && newTotalP < curTotalP) return;
+
       // Preserve leaderboard if lagging empty response
       if ((!newState.leaderboard_top10 || newState.leaderboard_top10.length === 0) && (gameState.leaderboard_top10 && gameState.leaderboard_top10.length > 0)) {
         newState.leaderboard_top10 = gameState.leaderboard_top10;
@@ -288,7 +293,7 @@ function applyIncomingState(newState) {
       if ((!newState.investor_tangguh_top5 || newState.investor_tangguh_top5.length === 0) && (gameState.investor_tangguh_top5 && gameState.investor_tangguh_top5.length > 0)) {
         newState.investor_tangguh_top5 = gameState.investor_tangguh_top5;
       }
-      if (newVer < curVer && (newState.current_round || 0) <= (gameState.current_round || 0)) return;
+      if (newEpoch === curEpoch && newVer < curVer && newRound <= curRound && newTotalP <= curTotalP) return;
     }
   }
 

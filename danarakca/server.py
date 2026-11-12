@@ -220,6 +220,7 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         if path.startswith('/api/'):
             is_write = path in (
+                '/api/state/sync',
                 '/api/facilitator/draw-card',
                 '/api/facilitator/toggle-input',
                 '/api/facilitator/next-stage',

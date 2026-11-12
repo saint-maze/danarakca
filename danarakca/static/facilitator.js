@@ -308,6 +308,7 @@ function buildClientSync() {
   return {
     session_id: gameState.session_id || 1,
     state_version: gameState.state_version || 1,
+    roster_epoch: gameState.roster_epoch || 0,
     preserve_participants_on_reset: !!gameState.preserve_participants_on_reset,
     status: gameState.status,
     current_round: gameState.current_round,
@@ -334,30 +335,49 @@ function applyIncomingState(newState, force = false) {
     }
 
     if (newSess === curSess) {
-      // 1. Merge known participants so incoming lagging state never drops them
-      if (gameState.participants_sync) {
-        newState.participants_sync = Object.assign({}, gameState.participants_sync, newState.participants_sync || {});
-      }
-      // 2. Prevent round rollback from lagging containers
-      if ((newState.current_round || 0) < (gameState.current_round || 0)) {
-        newState.current_round = gameState.current_round;
-        newState.drawn_card_ids = gameState.drawn_card_ids || [];
-        newState.last_drawn_card = gameState.last_drawn_card;
-        newState.recent_cards = gameState.recent_cards || [];
-      }
-      // 3. Preserve leaderboard if incoming is empty but local already had active participants
-      if ((!newState.leaderboard_top10 || newState.leaderboard_top10.length === 0) && (gameState.leaderboard_top10 && gameState.leaderboard_top10.length > 0)) {
-        newState.leaderboard_top10 = gameState.leaderboard_top10;
-      }
-      if ((!newState.investor_tangguh_top5 || newState.investor_tangguh_top5.length === 0) && (gameState.investor_tangguh_top5 && gameState.investor_tangguh_top5.length > 0)) {
-        newState.investor_tangguh_top5 = gameState.investor_tangguh_top5;
-      }
-      const syncCount = Object.keys(newState.participants_sync || {}).length;
-      newState.total_participants = Math.max(newState.total_participants || 0, syncCount, gameState.total_participants || 0);
+      const curEpoch = gameState.roster_epoch || 0;
+      const newEpoch = newState.roster_epoch || 0;
+      if (!force && newEpoch < curEpoch) return;
 
-      // If incoming version is older and not forced, keep current state after merging participants
-      if (!force && newVer < curVer) {
-        return;
+      const isSameEpoch = (newEpoch === curEpoch);
+      if (isSameEpoch) {
+        // 1. Merge known participants so incoming lagging state never drops them
+        if (gameState.participants_sync) {
+          newState.participants_sync = Object.assign({}, gameState.participants_sync, newState.participants_sync || {});
+        }
+        const curRound = gameState.current_round || 0;
+        const newRound = newState.current_round || 0;
+        const curTotalP = gameState.total_participants || 0;
+        const newTotalP = newState.total_participants || 0;
+
+        // 2. Prevent round or participant rollback from lagging/partial containers
+        if (newRound < curRound) {
+          newState.current_round = curRound;
+          newState.drawn_card_ids = gameState.drawn_card_ids || [];
+          newState.last_drawn_card = gameState.last_drawn_card;
+          newState.recent_cards = gameState.recent_cards || [];
+          newState.asset_indexes = gameState.asset_indexes;
+          newState.asset_history = gameState.asset_history;
+          newState.leaderboard_top10 = gameState.leaderboard_top10 || [];
+          newState.investor_tangguh_top5 = gameState.investor_tangguh_top5 || [];
+        } else if (!force && newRound === curRound && newTotalP < curTotalP && gameState.leaderboard_top10 && gameState.leaderboard_top10.length > 0) {
+          newState.leaderboard_top10 = gameState.leaderboard_top10;
+          newState.investor_tangguh_top5 = gameState.investor_tangguh_top5 || newState.investor_tangguh_top5;
+        }
+        // 3. Preserve leaderboard if incoming is empty but local already had active participants
+        if ((!newState.leaderboard_top10 || newState.leaderboard_top10.length === 0) && (gameState.leaderboard_top10 && gameState.leaderboard_top10.length > 0)) {
+          newState.leaderboard_top10 = gameState.leaderboard_top10;
+        }
+        if ((!newState.investor_tangguh_top5 || newState.investor_tangguh_top5.length === 0) && (gameState.investor_tangguh_top5 && gameState.investor_tangguh_top5.length > 0)) {
+          newState.investor_tangguh_top5 = gameState.investor_tangguh_top5;
+        }
+        const syncCount = Object.keys(newState.participants_sync || {}).length;
+        newState.total_participants = Math.max(newTotalP, syncCount, curTotalP);
+
+        // If incoming version is older and not forced, keep current state after merging participants
+        if (!force && newVer < curVer) {
+          return;
+        }
       }
     }
   }
@@ -603,7 +623,7 @@ function renderLeaderboard() {
     return;
   }
 
-  const lbHash = `${currentTab}:${gameState.current_round}:${list.map(p => `${p.code || p.name}:${Math.round(p.current_value || 0)}:${p.current_rank}:${p.prev_rank}`).join('|')}`;
+  const lbHash = `${currentTab}:${gameState.session_id}:${gameState.current_round}:${list.map(p => `${p.code || p.name}:${Math.round(p.current_value || 0)}:${p.current_rank}:${p.prev_rank}`).join('|')}`;
   if (lbHash === lastLeaderboardHash) return;
   lastLeaderboardHash = lbHash;
 

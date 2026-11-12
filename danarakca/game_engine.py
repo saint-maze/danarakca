@@ -226,25 +226,46 @@ class GameEngine:
 
             if file_sess > mem_sess:
                 self.state = loaded
+                self._public_state_cache = None
                 return True
             elif file_sess < mem_sess:
                 return True
 
-            # Same session: merge participants and drawn cards to prevent participant loss or round rollback
+            # Same session: keep the newer roster epoch, otherwise merge participants and drawn cards
+            file_epoch = int(loaded.get('roster_epoch', 0))
+            mem_epoch = int(self.state.get('roster_epoch', 0))
+            if file_epoch > mem_epoch:
+                self.state = loaded
+                self._public_state_cache = None
+                return True
+            elif mem_epoch > file_epoch:
+                return True
+
             mem_participants = self.state.get('participants', {})
             loaded_participants = loaded.get('participants', {})
             mem_cards = self.state.get('drawn_cards', [])
             loaded_cards = loaded.get('drawn_cards', [])
 
-            merged_participants = dict(loaded_participants)
-            for code, p in mem_participants.items():
+            # Preserve the newer version's participant records and fill missing entries/allocations from the older side
+            if file_ver >= mem_ver:
+                primary_participants, secondary_participants = loaded_participants, mem_participants
+            else:
+                primary_participants, secondary_participants = mem_participants, loaded_participants
+
+            merged_participants = {k: dict(v) for k, v in primary_participants.items()}
+            need_rebuild = False
+
+            for code, p in secondary_participants.items():
                 if code not in merged_participants:
-                    merged_participants[code] = p
+                    merged_participants[code] = dict(p)
+                    need_rebuild = True
                 elif isinstance(p.get('allocations'), dict):
-                    cur_allocs = merged_participants[code].setdefault('allocations', {})
+                    cur_allocs = dict(merged_participants[code].get('allocations', {}))
                     for stg, alloc in p['allocations'].items():
                         if stg not in cur_allocs and isinstance(alloc, dict):
                             cur_allocs[stg] = alloc
+                            need_rebuild = True
+                    merged_participants[code]['allocations'] = cur_allocs
 
             if file_ver >= mem_ver:
                 self.state = loaded
@@ -252,12 +273,20 @@ class GameEngine:
                 if len(mem_cards) > len(loaded_cards):
                     self.state['drawn_cards'] = mem_cards
                     self.state['current_round'] = len(mem_cards)
+                    need_rebuild = True
             else:
                 self.state['participants'] = merged_participants
                 if len(loaded_cards) > len(mem_cards):
                     self.state['drawn_cards'] = loaded_cards
                     self.state['current_round'] = len(loaded_cards)
+                    need_rebuild = True
 
+            if need_rebuild:
+                self._rebuild_simulation()
+                if self.state.get('current_round', 0) >= self.state.get('total_rounds', 30):
+                    self.state['status'] = 'GAME_FINISHED'
+
+            self._public_state_cache = None
             return True
 
     def load_or_init_state(self):
@@ -343,6 +372,7 @@ class GameEngine:
             self.state = {
                 'session_id': new_session_id,
                 'state_version': new_session_id,
+                'roster_epoch': 0,
                 'preserve_participants_on_reset': bool(preserve_participants),
                 'status': 'WAITING_STAGE_1',
                 'current_round': 0,
@@ -511,14 +541,21 @@ class GameEngine:
                         cur_cards = inc_cards
                     changed = True
 
-                # 2. Same session, incoming state has newer version or more drawn cards
+                # 2. Same session, incoming state has newer version, roster epoch, or more drawn cards
                 elif inc_session == cur_session or cur_session <= 1:
                     if inc_session > 1 and cur_session <= 1:
                         self.state['session_id'] = inc_session
                         cur_session = inc_session
                         changed = True
 
-                    if inc_version > cur_version or (isinstance(inc_cards, list) and len(inc_cards) > len(cur_cards)):
+                    inc_epoch = int(client_sync.get('roster_epoch') or 0)
+                    cur_epoch = int(self.state.get('roster_epoch', 0))
+                    if inc_epoch > cur_epoch:
+                        self.state['roster_epoch'] = inc_epoch
+                        self.state['participants'] = {}
+                        changed = True
+
+                    if inc_version > cur_version or inc_epoch > cur_epoch or (isinstance(inc_cards, list) and len(inc_cards) > len(cur_cards)):
                         self.state['state_version'] = max(cur_version, inc_version)
                         cur_version = self.state['state_version']
                         if 'status' in client_sync:
@@ -580,33 +617,49 @@ class GameEngine:
                     session_matches = (p_sess == cur_session) or (p_sess == 0) or (cur_session <= 1)
 
                     if not self.is_participant_session_expired(name, p_sess):
-                        if det_code not in self.state['participants']:
-                            self.state['participants'][det_code] = {
-                                'code': det_code,
-                                'name': name,
-                                'allocations': {},
-                                'current_value': self.config['initial_capital'],
-                                'prev_value': self.config['initial_capital'],
-                                'current_rank': 1,
-                                'prev_rank': 1,
-                                'max_drawdown': 0.0,
-                                'history': []
-                            }
-                            changed = True
-
-                        if session_matches and isinstance(participant_sync.get('allocations'), dict):
-                            cur_allocs = self.state['participants'][det_code].setdefault('allocations', {})
+                        need_force_refresh = det_code not in self.state['participants']
+                        if not need_force_refresh and session_matches and isinstance(participant_sync.get('allocations'), dict):
+                            existing_allocs = self.state['participants'][det_code].get('allocations', {})
                             max_stage = int(self.state.get('current_stage', 1))
-                            for stg, alloc in participant_sync['allocations'].items():
+                            for stg in participant_sync['allocations']:
                                 stg_str = str(stg)
-                                if stg_str in ('1', '2', '3') and int(stg_str) <= max_stage and stg_str not in cur_allocs:
-                                    valid_alloc = self.sanitize_allocation(alloc)
-                                    if valid_alloc:
-                                        cur_allocs[stg_str] = valid_alloc
-                                        changed = True
+                                if stg_str in ('1', '2', '3') and int(stg_str) <= max_stage and stg_str not in existing_allocs:
+                                    need_force_refresh = True
+                                    break
 
-                        if changed:
-                            self._rebuild_simulation()
+                        if need_force_refresh and self.redis_url and self.redis_token:
+                            self.refresh_state(force=True)
+                            cur_session = int(self.state.get('session_id', 1))
+                            session_matches = (p_sess == cur_session) or (p_sess == 0) or (cur_session <= 1)
+
+                        if not self.is_participant_session_expired(name, p_sess):
+                            if det_code not in self.state['participants']:
+                                self.state['participants'][det_code] = {
+                                    'code': det_code,
+                                    'name': name,
+                                    'allocations': {},
+                                    'current_value': self.config['initial_capital'],
+                                    'prev_value': self.config['initial_capital'],
+                                    'current_rank': 1,
+                                    'prev_rank': 1,
+                                    'max_drawdown': 0.0,
+                                    'history': []
+                                }
+                                changed = True
+
+                            if session_matches and isinstance(participant_sync.get('allocations'), dict):
+                                cur_allocs = self.state['participants'][det_code].setdefault('allocations', {})
+                                max_stage = int(self.state.get('current_stage', 1))
+                                for stg, alloc in participant_sync['allocations'].items():
+                                    stg_str = str(stg)
+                                    if stg_str in ('1', '2', '3') and int(stg_str) <= max_stage and stg_str not in cur_allocs:
+                                        valid_alloc = self.sanitize_allocation(alloc)
+                                        if valid_alloc:
+                                            cur_allocs[stg_str] = valid_alloc
+                                            changed = True
+
+                            if changed:
+                                self._rebuild_simulation()
 
             if changed:
                 self._public_state_cache = None
@@ -668,6 +721,14 @@ class GameEngine:
             for existing_code, p in list(self.state['participants'].items()):
                 if p['name'].strip().lower() == name.lower():
                     return p
+
+            if self.redis_url and self.redis_token:
+                self.refresh_state(force=True)
+                if det_code in self.state['participants']:
+                    return self.state['participants'][det_code]
+                for existing_code, p in list(self.state['participants'].items()):
+                    if p['name'].strip().lower() == name.lower():
+                        return p
 
             self.state['participants'][det_code] = {
                 'code': det_code,
@@ -944,8 +1005,12 @@ class GameEngine:
 
         sorted_codes = sorted(
             self.state['participants'].keys(),
-            key=lambda c: self.state['participants'][c]['current_value'],
-            reverse=True
+            key=lambda c: (
+                -round(self.state['participants'][c]['current_value'], 6),
+                round(self.state['participants'][c].get('max_drawdown', 0.0), 6),
+                self.state['participants'][c]['name'].lower(),
+                c
+            )
         )
 
         for rank, code in enumerate(sorted_codes, start=1):
@@ -956,8 +1021,12 @@ class GameEngine:
     def get_leaderboard(self, limit=None):
         sorted_participants = sorted(
             self.state.get('participants', {}).values(),
-            key=lambda p: p.get('current_value', 0.0),
-            reverse=True
+            key=lambda p: (
+                -round(p.get('current_value', 0.0), 6),
+                round(p.get('max_drawdown', 0.0), 6),
+                p.get('name', '').lower(),
+                p.get('code', '')
+            )
         )
         if limit:
             return sorted_participants[:limit]
@@ -976,13 +1045,26 @@ class GameEngine:
             if p.get('max_drawdown', 0.0) <= max_dd_limit
         ]
         if eligible:
-            return sorted(eligible, key=lambda p: p.get('current_value', 0.0), reverse=True)
+            return sorted(
+                eligible,
+                key=lambda p: (
+                    -round(p.get('current_value', 0.0), 6),
+                    round(p.get('max_drawdown', 0.0), 6),
+                    p.get('name', '').lower(),
+                    p.get('code', '')
+                )
+            )
 
         # Fallback: if all participants exceeded max_dd_limit (common in Phase 2/3 rounds 18-30),
         # rank by lowest drawdown (best risk discipline), tie-broken by higher portfolio value.
         return sorted(
             participants,
-            key=lambda p: (p.get('max_drawdown', 1.0), -p.get('current_value', 0.0))
+            key=lambda p: (
+                round(p.get('max_drawdown', 1.0), 6),
+                -round(p.get('current_value', 0.0), 6),
+                p.get('name', '').lower(),
+                p.get('code', '')
+            )
         )
 
     def seed_mock_participants(self, count=200):
@@ -1041,6 +1123,7 @@ class GameEngine:
                     'history': []
                 }
 
+            self.state['roster_epoch'] = int(self.state.get('roster_epoch', 0)) + 1
             self._rebuild_simulation()
             self.state['message'] = f"Berhasil membuat {count} peserta simulasi."
             self.save_state()
@@ -1052,6 +1135,8 @@ class GameEngine:
             cache_key = (
                 self.state.get('session_id', 1),
                 self.state.get('state_version', 1),
+                self.state.get('roster_epoch', 0),
+                self.state.get('status', 'WAITING_STAGE_1'),
                 len(self.state.get('participants', {})),
                 self.state.get('current_round', 0),
                 self.state.get('current_stage', 1),
@@ -1065,6 +1150,7 @@ class GameEngine:
             public_state = {
                 'session_id': self.state.get('session_id', 1),
                 'state_version': self.state.get('state_version', 1),
+                'roster_epoch': self.state.get('roster_epoch', 0),
                 'live_channel': self.LIVE_CHANNEL,
                 'preserve_participants_on_reset': self.state.get('preserve_participants_on_reset', False),
                 'status': self.state.get('status', 'WAITING_STAGE_1'),
