@@ -391,7 +391,7 @@ function applyPlayerSyncResponse(newState, newParticipant, force = false) {
       lastLoadedStage = null;
       lastProcessedCardRound = -1;
       gameState = newState;
-    } else if (!force && gameState && newSess === curSess) {
+    } else if (gameState && newSess === curSess) {
       const curEpoch = gameState.roster_epoch || 0;
       const newEpoch = newState.roster_epoch || 0;
       const curRound = gameState.current_round || 0;
@@ -399,12 +399,24 @@ function applyPlayerSyncResponse(newState, newParticipant, force = false) {
       const curTotalP = gameState.total_participants || 0;
       const newTotalP = newState.total_participants || 0;
 
-      // Reject lagging or partial container responses so player rank/portfolio value never jumps backward
-      if (newEpoch < curEpoch) return;
-      if (newEpoch === curEpoch) {
-        if (newRound < curRound) return;
-        if (newRound === curRound && newTotalP < curTotalP) return;
-        if (newVer < curVer && newRound <= curRound && newTotalP <= curTotalP) return;
+      if (!force) {
+        // Reject lagging or partial container responses so player rank/portfolio value never jumps backward
+        if (newEpoch < curEpoch) return;
+        if (newEpoch === curEpoch) {
+          if (newRound < curRound) return;
+          if (newRound === curRound && newTotalP < curTotalP) return;
+          if (newVer < curVer && newRound <= curRound && newTotalP <= curTotalP) return;
+        }
+      } else if (newEpoch === curEpoch && (newRound < curRound || newTotalP < curTotalP)) {
+        // Submit hit a partial container: keep fuller game metrics and participant rank/value while syncing new allocation
+        newState.current_round = Math.max(curRound, newRound);
+        newState.total_participants = Math.max(curTotalP, newTotalP);
+        newState.current_stage = Math.max(gameState.current_stage || 1, newState.current_stage || 1);
+        if (participantData && newParticipant) {
+          newParticipant.current_rank = participantData.current_rank;
+          newParticipant.current_value = participantData.current_value;
+          newParticipant.max_drawdown = participantData.max_drawdown;
+        }
       }
       localStorage.setItem('danarakca_session_id', String(newSess));
       gameState = newState;
@@ -784,9 +796,6 @@ async function handleAllocationSubmit(e) {
   submitInFlight = true;
 
   const stageKey = String(gameState.current_stage);
-  savedAllocations[stageKey] = { ...allocation };
-  savedAllocTs[stageKey] = Math.max((savedAllocTs[stageKey] || 0) + 1, Date.now());
-  persistSavedAllocations();
 
   try {
     const res = await fetch('/api/participant/submit', {
@@ -808,7 +817,8 @@ async function handleAllocationSubmit(e) {
       showToast(`Alokasi portofolio Tahap ${gameState.current_stage} berhasil disimpan!`, 'success');
       userIsEditing = false;
       lastLoadedStage = gameState.current_stage;
-      savedAllocTs[stageKey] = json.participant?.alloc_ts?.[stageKey] || savedAllocTs[stageKey] || Date.now();
+      savedAllocations[stageKey] = { ...allocation };
+      savedAllocTs[stageKey] = json.participant?.alloc_ts?.[stageKey] || Math.max((savedAllocTs[stageKey] || 0) + 1, Date.now());
       persistSavedAllocations();
       applyPlayerSyncResponse(json.state, json.participant, true);
     } else if (json.session_expired) {

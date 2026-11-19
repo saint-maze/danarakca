@@ -13,6 +13,7 @@ class GameEngine:
     def __init__(self, data_dir=None):
         self.lock = threading.RLock()
         self._last_refresh_time = 0.0
+        self._mutation_seq = 0
         self._public_state_cache = None
         self._public_state_cache_key = None
         if data_dir is None:
@@ -218,7 +219,8 @@ class GameEngine:
                     if isinstance(val, dict):
                         roster_res = results[1].get("result") if len(results) > 1 and isinstance(results[1], dict) else None
                         if roster_res:
-                            self._merge_roster_entries(val, roster_res)
+                            if self._merge_roster_entries(val, roster_res):
+                                val['_roster_merged'] = True
                         return val
         except Exception:
             pass
@@ -239,7 +241,7 @@ class GameEngine:
             print(f"Redis get error: {e}")
         return None
 
-    def _save_to_redis(self, clear_roster=False):
+    def _save_to_redis(self, clear_roster=False, dirty_codes=None):
         if not self.redis_url or not self.redis_token:
             return
         # If the Redis read failed this request, self.state is a stale local fallback; writing it would
@@ -261,7 +263,14 @@ class GameEngine:
                 commands.append(["DEL", "danarakca_roster"])
             cur_sess = int(self.state.get('session_id', 1))
             cur_epoch = int(self.state.get('roster_epoch', 0))
-            for code, p in list(self.state.get('participants', {}).items()):
+            participants_map = self.state.get('participants', {})
+            codes_to_sync = list(participants_map.keys()) if clear_roster else [
+                c for c in (dirty_codes or ()) if c in participants_map
+            ]
+            for code in codes_to_sync:
+                p = participants_map.get(code)
+                if not isinstance(p, dict):
+                    continue
                 p_meta = json.dumps({
                     'session_id': cur_sess,
                     'roster_epoch': cur_epoch,
@@ -314,7 +323,7 @@ class GameEngine:
             self.config = json.load(f)
 
     @staticmethod
-    def _merge_participant_allocations(target_p, incoming_allocs, incoming_ts=None, max_stage=3):
+    def _merge_participant_allocations(target_p, incoming_allocs, incoming_ts=None, max_stage=3, lock_existing_stage=None):
         if not isinstance(incoming_allocs, dict) or not incoming_allocs:
             return False
         cur_allocs = target_p.setdefault('allocations', {})
@@ -324,6 +333,8 @@ class GameEngine:
         for stg, alloc in incoming_allocs.items():
             stg_str = str(stg)
             if stg_str not in ('1', '2', '3') or int(stg_str) > max_stage:
+                continue
+            if lock_existing_stage is not None and stg_str == str(lock_existing_stage) and stg_str in cur_allocs:
                 continue
             valid_alloc = GameEngine.sanitize_allocation(alloc)
             if not valid_alloc:
@@ -373,9 +384,13 @@ class GameEngine:
             self._last_refresh_time = time.time()
 
             if not hasattr(self, 'state') or not isinstance(self.state, dict):
+                roster_merged = bool(loaded.pop('_roster_merged', False))
                 self.state = loaded
+                if roster_merged:
+                    self._rebuild_simulation()
                 return True
 
+            roster_merged = bool(loaded.pop('_roster_merged', False))
             file_sess = int(loaded.get('session_id', 0))
             mem_sess = int(self.state.get('session_id', 0))
             file_ver = int(loaded.get('state_version', 0))
@@ -383,6 +398,8 @@ class GameEngine:
 
             if file_sess > mem_sess:
                 self.state = loaded
+                if roster_merged:
+                    self._rebuild_simulation()
                 self._public_state_cache = None
                 return True
             elif file_sess < mem_sess:
@@ -393,6 +410,8 @@ class GameEngine:
             mem_epoch = int(self.state.get('roster_epoch', 0))
             if file_epoch > mem_epoch:
                 self.state = loaded
+                if roster_merged:
+                    self._rebuild_simulation()
                 self._public_state_cache = None
                 return True
             elif mem_epoch > file_epoch:
@@ -414,7 +433,7 @@ class GameEngine:
                 primary_participants, secondary_participants = mem_participants, loaded_participants
 
             merged_participants = {k: copy.deepcopy(v) for k, v in primary_participants.items()}
-            need_rebuild = (len(merged_participants) != len(loaded_participants)) if file_is_newer else False
+            need_rebuild = roster_merged or ((len(merged_participants) != len(loaded_participants)) if file_is_newer else False)
 
             for code, p in secondary_participants.items():
                 if code not in merged_participants:
@@ -482,12 +501,13 @@ class GameEngine:
         else:
             self.state['state_version'] = cur_ver + 1
 
-    def save_state(self, bump_version=True, use_wall_clock=True, clear_roster=False):
+    def save_state(self, bump_version=True, use_wall_clock=True, clear_roster=False, dirty_codes=None):
         with self.lock:
             if bump_version:
                 self._bump_version(use_wall_clock=use_wall_clock)
+            self._mutation_seq += 1
             self._public_state_cache = None
-            tmp_file = f"{self.state_file}.tmp.{os.getpid()}"
+            tmp_file = f"{self.state_file}.tmp.{os.getpid()}.{threading.get_ident()}"
             try:
                 with open(tmp_file, 'w', encoding='utf-8') as f:
                     json.dump(self.state, f, ensure_ascii=False, separators=(',', ':'))
@@ -504,9 +524,13 @@ class GameEngine:
             # Sync to Upstash Redis if available
             if self.redis_url and self.redis_token:
                 if os.environ.get('VERCEL') == '1':
-                    self._save_to_redis(clear_roster=clear_roster)
+                    self._save_to_redis(clear_roster=clear_roster, dirty_codes=dirty_codes)
                 else:
-                    threading.Thread(target=self._save_to_redis, kwargs={'clear_roster': clear_roster}, daemon=True).start()
+                    threading.Thread(
+                        target=self._save_to_redis,
+                        kwargs={'clear_roster': clear_roster, 'dirty_codes': dirty_codes},
+                        daemon=True
+                    ).start()
 
     def reset_game(self, preserve_participants=False, total_stages=None):
         with self.lock:
@@ -594,6 +618,7 @@ class GameEngine:
 
     def _rebuild_simulation(self, drawn_card_ids=None):
         """Deterministically rebuilds asset indexes, stage factors, drawn cards, and all participant histories."""
+        self._mutation_seq += 1
         if drawn_card_ids is None:
             drawn_card_ids = [d['card_id'] for d in self.state.get('drawn_cards', []) if isinstance(d, dict) and 'card_id' in d]
 
@@ -627,6 +652,7 @@ class GameEngine:
         for code, p in self.state.get('participants', {}).items():
             p['current_value'] = initial_cap
             p['prev_value'] = initial_cap
+            p['peak_value'] = initial_cap
             p['current_rank'] = 1
             p['prev_rank'] = 1
             p['max_drawdown'] = 0.0
@@ -699,6 +725,7 @@ class GameEngine:
         """Synchronizes state across stateless serverless containers using monotonic session_id and state_version."""
         with self.lock:
             changed = False
+            dirty_codes = set()
             cur_session = int(self.state.get('session_id', 1))
             cur_version = int(self.state.get('state_version', 1))
 
@@ -769,6 +796,7 @@ class GameEngine:
                             continue
                         det_code = self.make_participant_code(name)
                         inc_joined = int(p_data.get('joined_at', 0) or 0)
+                        p_dirty = False
                         if det_code not in self.state['participants']:
                             self.state['participants'][det_code] = {
                                 'code': det_code,
@@ -778,23 +806,27 @@ class GameEngine:
                                 'alloc_ts': {},
                                 'current_value': self.config['initial_capital'],
                                 'prev_value': self.config['initial_capital'],
+                                'peak_value': self.config['initial_capital'],
                                 'current_rank': 1,
                                 'prev_rank': 1,
                                 'max_drawdown': 0.0,
                                 'history': []
                             }
-                            changed = True
+                            p_dirty = True
                         elif inc_joined > 0:
                             cur_joined = int(self.state['participants'][det_code].get('joined_at', 0) or 0)
                             if cur_joined <= 0 or inc_joined < cur_joined:
                                 self.state['participants'][det_code]['joined_at'] = inc_joined
-                                changed = True
+                                p_dirty = True
                         if self._merge_participant_allocations(
                             self.state['participants'][det_code],
                             p_data.get('allocations'),
                             p_data.get('alloc_ts'),
                             max_stage=3
                         ):
+                            p_dirty = True
+                        if p_dirty:
+                            dirty_codes.add(det_code)
                             changed = True
 
                 if changed:
@@ -816,9 +848,12 @@ class GameEngine:
                             existing_ts = existing_p.get('alloc_ts', {})
                             inc_ts_map = participant_sync.get('alloc_ts') if isinstance(participant_sync.get('alloc_ts'), dict) else {}
                             max_stage = int(self.state.get('current_stage', 1))
+                            locked_stg = None if self.state.get('stage_input_open', False) else str(max_stage)
                             for stg in participant_sync['allocations']:
                                 stg_str = str(stg)
                                 if stg_str in ('1', '2', '3') and int(stg_str) <= max_stage:
+                                    if locked_stg is not None and stg_str == locked_stg and stg_str in existing_allocs:
+                                        continue
                                     try:
                                         inc_ts = int(inc_ts_map.get(stg_str, 0) or 0)
                                     except (TypeError, ValueError):
@@ -848,6 +883,7 @@ class GameEngine:
                                     'alloc_ts': {},
                                     'current_value': self.config['initial_capital'],
                                     'prev_value': self.config['initial_capital'],
+                                    'peak_value': self.config['initial_capital'],
                                     'current_rank': 1,
                                     'prev_rank': 1,
                                     'max_drawdown': 0.0,
@@ -872,21 +908,25 @@ class GameEngine:
                                 else:
                                     valid_p_cards = None
 
+                            cur_stg_num = int(self.state.get('current_stage', 1))
+                            locked_stg = None if self.state.get('stage_input_open', False) else str(cur_stg_num)
                             if session_matches and self._merge_participant_allocations(
                                 self.state['participants'][det_code],
                                 participant_sync.get('allocations'),
                                 participant_sync.get('alloc_ts'),
-                                max_stage=int(self.state.get('current_stage', 1))
+                                max_stage=cur_stg_num,
+                                lock_existing_stage=locked_stg
                             ):
                                 p_changed = True
 
                             if p_changed:
+                                dirty_codes.add(det_code)
                                 changed = True
                                 self._rebuild_simulation(valid_p_cards)
 
             if changed:
                 self._public_state_cache = None
-                self.save_state(bump_version=True, use_wall_clock=False)
+                self.save_state(bump_version=True, use_wall_clock=False, dirty_codes=dirty_codes)
 
     def is_participant_session_expired(self, name, session_id):
         """True when a player from an earlier session is no longer in the roster (reset without preserve)."""
@@ -961,6 +1001,7 @@ class GameEngine:
                 'alloc_ts': {},
                 'current_value': self.config['initial_capital'],
                 'prev_value': self.config['initial_capital'],
+                'peak_value': self.config['initial_capital'],
                 'current_rank': len(self.state['participants']) + 1,
                 'prev_rank': len(self.state['participants']) + 1,
                 'max_drawdown': 0.0,
@@ -968,7 +1009,7 @@ class GameEngine:
             }
 
             self._rebuild_simulation()
-            self.save_state(use_wall_clock=False)
+            self.save_state(use_wall_clock=False, dirty_codes=(det_code,))
             return self.state['participants'][det_code]
 
     def submit_allocation(self, code_or_name, stage, allocation, name=None):
@@ -1024,7 +1065,7 @@ class GameEngine:
             alloc_ts[str(stage)] = max(prev_ts + 1, now_ms)
             self.state['participants'][code].setdefault('allocations', {})[str(stage)] = clean_alloc
             self._rebuild_simulation()
-            self.save_state(use_wall_clock=False)
+            self.save_state(use_wall_clock=False, dirty_codes=(code,))
             return clean_alloc
 
     def get_effective_allocation(self, code, stage):
@@ -1178,47 +1219,60 @@ class GameEngine:
 
     def _recalculate_participants(self, current_round, current_stage):
         rounds_per_stage = self.state['rounds_per_stage']
+        initial_cap = self.config['initial_capital']
+        stage_factors = self.state['stage_factors']
 
         for code, p in self.state['participants'].items():
-            p['prev_value'] = p.get('current_value', self.config['initial_capital'])
+            p['prev_value'] = p.get('current_value', initial_cap)
             p['prev_rank'] = p.get('current_rank', 1)
+            hist = p.get('history')
+            if not isinstance(hist, list):
+                hist = []
+                p['history'] = hist
 
             if current_stage <= 1:
-                base_val = self.config['initial_capital']
+                base_val = initial_cap
             else:
                 target_round = (current_stage - 1) * rounds_per_stage
                 base_val = None
-                for h in p.get('history', []):
-                    if h.get('round') == target_round:
-                        base_val = h.get('value')
-                        break
+                if target_round < len(hist) and isinstance(hist[target_round], dict) and hist[target_round].get('round') == target_round:
+                    base_val = hist[target_round].get('value')
                 if base_val is None:
-                    valid_h = [h for h in p.get('history', []) if h.get('round', 0) <= target_round]
+                    for h in hist:
+                        if h.get('round') == target_round:
+                            base_val = h.get('value')
+                            break
+                if base_val is None:
+                    valid_h = [h for h in hist if h.get('round', 0) <= target_round]
                     if valid_h:
-                        base_val = valid_h[-1].get('value', self.config['initial_capital'])
+                        base_val = valid_h[-1].get('value', initial_cap)
                     else:
-                        base_val = p.get('current_value', self.config['initial_capital'])
+                        base_val = p.get('current_value', initial_cap)
 
             alloc = self.get_effective_allocation(code, current_stage)
 
-            growth = sum(
-                (alloc.get(a, 0.0) / 100.0) * self.state['stage_factors'].get(a, 1.0)
-                for a in ['sukuk', 'saham', 'rdpu', 'emas', 'campuran']
-            )
+            growth = (
+                (alloc.get('sukuk', 0.0) * stage_factors.get('sukuk', 1.0)) +
+                (alloc.get('saham', 0.0) * stage_factors.get('saham', 1.0)) +
+                (alloc.get('rdpu', 0.0) * stage_factors.get('rdpu', 1.0)) +
+                (alloc.get('emas', 0.0) * stage_factors.get('emas', 1.0)) +
+                (alloc.get('campuran', 0.0) * stage_factors.get('campuran', 1.0))
+            ) / 100.0
 
             current_val = base_val * growth
             p['current_value'] = current_val
 
-            all_values = [h.get('value', base_val) for h in p.get('history', [])] + [current_val]
-            peak = max(all_values) if all_values else current_val
+            prev_peak = p.get('peak_value')
+            if prev_peak is None:
+                prev_peak = max((h.get('value', base_val) for h in hist), default=base_val)
+            peak = max(float(prev_peak), current_val)
+            p['peak_value'] = peak
             drawdown = max(0.0, 1.0 - (current_val / peak)) if peak > 0 else 0.0
 
             prev_mdd = p.get('max_drawdown', 0.0)
             p['max_drawdown'] = max(prev_mdd, drawdown)
 
-            if 'history' not in p:
-                p['history'] = []
-            p['history'].append({
+            hist.append({
                 'round': current_round,
                 'value': current_val,
                 'drawdown': drawdown,
@@ -1349,6 +1403,7 @@ class GameEngine:
                     'alloc_ts': {k: 1 for k in allocations},
                     'current_value': self.config['initial_capital'],
                     'prev_value': self.config['initial_capital'],
+                    'peak_value': self.config['initial_capital'],
                     'current_rank': i,
                     'prev_rank': i,
                     'max_drawdown': 0.0,
@@ -1364,15 +1419,8 @@ class GameEngine:
     def get_public_state(self):
         """Returns clean state for API."""
         with self.lock:
-            alloc_sig = tuple(sorted(
-                (
-                    code,
-                    int(p.get('joined_at', 0) or 0),
-                    tuple(sorted((str(k), int(v or 0)) for k, v in p.get('alloc_ts', {}).items()))
-                )
-                for code, p in self.state.get('participants', {}).items()
-            ))
             cache_key = (
+                self._mutation_seq,
                 self.state.get('session_id', 1),
                 self.state.get('state_version', 1),
                 self.state.get('roster_epoch', 0),
@@ -1382,8 +1430,7 @@ class GameEngine:
                 self.state.get('current_stage', 1),
                 self.state.get('stage_input_open', False),
                 self.state.get('total_stages', 3),
-                self.state.get('message', ''),
-                alloc_sig
+                self.state.get('message', '')
             )
             if self._public_state_cache is not None and self._public_state_cache_key == cache_key:
                 return self._public_state_cache
