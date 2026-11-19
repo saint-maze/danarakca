@@ -205,7 +205,10 @@ function buildParticipantSync() {
   return {
     code: currentUser.code,
     name: currentUser.name,
+    joined_at: (participantData && participantData.joined_at) ? participantData.joined_at : 0,
     session_id: gameState ? (gameState.session_id || savedSess) : savedSess,
+    current_stage: gameState ? (gameState.current_stage || 1) : 1,
+    drawn_card_ids: (gameState && Array.isArray(gameState.drawn_card_ids)) ? gameState.drawn_card_ids : [],
     allocations: savedAllocations,
     alloc_ts: savedAllocTs
   };
@@ -388,15 +391,24 @@ function applyPlayerSyncResponse(newState, newParticipant, force = false) {
       lastLoadedStage = null;
       lastProcessedCardRound = -1;
       gameState = newState;
-    } else if (!force && gameState && newSess === curSess && newVer < curVer) {
-      // Ignore stale response from lagging container
-      return;
-    } else {
-      if (gameState && newSess === curSess && (newState.current_round || 0) < (gameState.current_round || 0)) {
-        newState.current_round = gameState.current_round;
-        newState.total_rounds = gameState.total_rounds || newState.total_rounds;
-        newState.current_stage = Math.max(newState.current_stage || 1, gameState.current_stage || 1);
+    } else if (!force && gameState && newSess === curSess) {
+      const curEpoch = gameState.roster_epoch || 0;
+      const newEpoch = newState.roster_epoch || 0;
+      const curRound = gameState.current_round || 0;
+      const newRound = newState.current_round || 0;
+      const curTotalP = gameState.total_participants || 0;
+      const newTotalP = newState.total_participants || 0;
+
+      // Reject lagging or partial container responses so player rank/portfolio value never jumps backward
+      if (newEpoch < curEpoch) return;
+      if (newEpoch === curEpoch) {
+        if (newRound < curRound) return;
+        if (newRound === curRound && newTotalP < curTotalP) return;
+        if (newVer < curVer && newRound <= curRound && newTotalP <= curTotalP) return;
       }
+      localStorage.setItem('danarakca_session_id', String(newSess));
+      gameState = newState;
+    } else {
       localStorage.setItem('danarakca_session_id', String(newSess));
       gameState = newState;
     }

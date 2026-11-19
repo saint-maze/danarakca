@@ -106,8 +106,12 @@ function getEffectiveAllocation(participant, stage) {
 }
 
 function compareLeaderboard(a, b) {
+  const aHasAlloc = (a.allocations && Object.keys(a.allocations).length > 0) ? 0 : 1;
+  const bHasAlloc = (b.allocations && Object.keys(b.allocations).length > 0) ? 0 : 1;
   return (b.current_value - a.current_value)
     || ((a.max_drawdown || 0) - (b.max_drawdown || 0))
+    || (aHasAlloc - bHasAlloc)
+    || ((a.joined_at || Number.MAX_SAFE_INTEGER) - (b.joined_at || Number.MAX_SAFE_INTEGER))
     || String(a.name || '').localeCompare(String(b.name || ''))
     || String(a.code || '').localeCompare(String(b.code || ''));
 }
@@ -282,6 +286,7 @@ export async function onRequest(context) {
         state.participants[code] = {
           code,
           name,
+          joined_at: Date.now(),
           allocations: {},
           current_value: CONFIG.initial_capital,
           prev_value: CONFIG.initial_capital,

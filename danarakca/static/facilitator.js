@@ -332,11 +332,17 @@ function mergeParticipantsSync(existingSync, incomingSync) {
         merged[code] = {
           code: p.code || code,
           name: p.name,
+          joined_at: Number(p.joined_at || 0),
           allocations: p.allocations ? { ...p.allocations } : {},
           alloc_ts: p.alloc_ts ? { ...p.alloc_ts } : {}
         };
       } else {
         if (p.name) merged[code].name = p.name;
+        const incJoined = Number(p.joined_at || 0);
+        const curJoined = Number(merged[code].joined_at || 0);
+        if (incJoined > 0 && (curJoined <= 0 || incJoined < curJoined)) {
+          merged[code].joined_at = incJoined;
+        }
         const incAllocs = p.allocations || {};
         const incTsMap = p.alloc_ts || {};
         for (const stg of ['1', '2', '3']) {
