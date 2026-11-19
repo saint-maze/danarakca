@@ -322,6 +322,40 @@ function buildClientSync() {
   };
 }
 
+function mergeParticipantsSync(existingSync, incomingSync) {
+  const merged = {};
+  const addSource = (src) => {
+    if (!src || typeof src !== 'object') return;
+    for (const [code, p] of Object.entries(src)) {
+      if (!p || typeof p !== 'object') continue;
+      if (!merged[code]) {
+        merged[code] = {
+          code: p.code || code,
+          name: p.name,
+          allocations: p.allocations ? { ...p.allocations } : {},
+          alloc_ts: p.alloc_ts ? { ...p.alloc_ts } : {}
+        };
+      } else {
+        if (p.name) merged[code].name = p.name;
+        const incAllocs = p.allocations || {};
+        const incTsMap = p.alloc_ts || {};
+        for (const stg of ['1', '2', '3']) {
+          if (!incAllocs[stg]) continue;
+          const incTs = Number(incTsMap[stg] || 0);
+          const curTs = Number(merged[code].alloc_ts[stg] || 0);
+          if (!merged[code].allocations[stg] || incTs > curTs) {
+            merged[code].allocations[stg] = { ...incAllocs[stg] };
+            merged[code].alloc_ts[stg] = Math.max(curTs, incTs, 1);
+          }
+        }
+      }
+    }
+  };
+  addSource(existingSync);
+  addSource(incomingSync);
+  return merged;
+}
+
 function applyIncomingState(newState, force = false) {
   if (!newState) return;
   if (gameState) {
@@ -341,9 +375,9 @@ function applyIncomingState(newState, force = false) {
 
       const isSameEpoch = (newEpoch === curEpoch);
       if (isSameEpoch) {
-        // 1. Merge known participants so incoming lagging state never drops them
+        // 1. Merge known participants so incoming lagging state never drops them or older allocations
         if (gameState.participants_sync) {
-          newState.participants_sync = Object.assign({}, gameState.participants_sync, newState.participants_sync || {});
+          newState.participants_sync = mergeParticipantsSync(gameState.participants_sync, newState.participants_sync);
         }
         const curRound = gameState.current_round || 0;
         const newRound = newState.current_round || 0;

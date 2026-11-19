@@ -185,6 +185,35 @@ class GameEngine:
         with open(self.config_file, 'r', encoding='utf-8') as f:
             self.config = json.load(f)
 
+    @staticmethod
+    def _merge_participant_allocations(target_p, incoming_allocs, incoming_ts=None, max_stage=3):
+        if not isinstance(incoming_allocs, dict) or not incoming_allocs:
+            return False
+        cur_allocs = target_p.setdefault('allocations', {})
+        cur_ts_map = target_p.setdefault('alloc_ts', {})
+        ts_in = incoming_ts if isinstance(incoming_ts, dict) else {}
+        changed = False
+        for stg, alloc in incoming_allocs.items():
+            stg_str = str(stg)
+            if stg_str not in ('1', '2', '3') or int(stg_str) > max_stage:
+                continue
+            valid_alloc = GameEngine.sanitize_allocation(alloc)
+            if not valid_alloc:
+                continue
+            try:
+                inc_ts = int(ts_in.get(stg_str, 0) or 0)
+            except (TypeError, ValueError):
+                inc_ts = 0
+            try:
+                cur_ts = int(cur_ts_map.get(stg_str, 0) or 0)
+            except (TypeError, ValueError):
+                cur_ts = 0
+            if stg_str not in cur_allocs or inc_ts > cur_ts:
+                cur_allocs[stg_str] = valid_alloc
+                cur_ts_map[stg_str] = max(cur_ts, inc_ts, 1)
+                changed = True
+        return changed
+
     def refresh_state(self, force=False):
         now = time.time()
         if not force and hasattr(self, '_last_refresh_time') and (now - self._last_refresh_time < 0.75) and hasattr(self, 'state') and isinstance(self.state, dict):
@@ -252,20 +281,21 @@ class GameEngine:
             else:
                 primary_participants, secondary_participants = mem_participants, loaded_participants
 
-            merged_participants = {k: dict(v) for k, v in primary_participants.items()}
+            merged_participants = {k: copy.deepcopy(v) for k, v in primary_participants.items()}
             need_rebuild = False
 
             for code, p in secondary_participants.items():
                 if code not in merged_participants:
-                    merged_participants[code] = dict(p)
+                    merged_participants[code] = copy.deepcopy(p)
                     need_rebuild = True
                 elif isinstance(p.get('allocations'), dict):
-                    cur_allocs = dict(merged_participants[code].get('allocations', {}))
-                    for stg, alloc in p['allocations'].items():
-                        if stg not in cur_allocs and isinstance(alloc, dict):
-                            cur_allocs[stg] = alloc
-                            need_rebuild = True
-                    merged_participants[code]['allocations'] = cur_allocs
+                    if self._merge_participant_allocations(
+                        merged_participants[code],
+                        p.get('allocations'),
+                        p.get('alloc_ts'),
+                        max_stage=3
+                    ):
+                        need_rebuild = True
 
             if file_ver >= mem_ver:
                 self.state = loaded
@@ -354,6 +384,7 @@ class GameEngine:
                         'code': det_code,
                         'name': p['name'],
                         'allocations': {},
+                        'alloc_ts': {},
                         'current_value': self.config['initial_capital'],
                         'prev_value': self.config['initial_capital'],
                         'current_rank': 1,
@@ -587,6 +618,7 @@ class GameEngine:
                                 'code': det_code,
                                 'name': name,
                                 'allocations': {},
+                                'alloc_ts': {},
                                 'current_value': self.config['initial_capital'],
                                 'prev_value': self.config['initial_capital'],
                                 'current_rank': 1,
@@ -595,15 +627,13 @@ class GameEngine:
                                 'history': []
                             }
                             changed = True
-                        inc_allocs = p_data.get('allocations', {})
-                        if isinstance(inc_allocs, dict):
-                            cur_allocs = self.state['participants'][det_code].setdefault('allocations', {})
-                            for stg, alloc in inc_allocs.items():
-                                if str(stg) in ('1', '2', '3') and str(stg) not in cur_allocs:
-                                    valid_alloc = self.sanitize_allocation(alloc)
-                                    if valid_alloc:
-                                        cur_allocs[str(stg)] = valid_alloc
-                                        changed = True
+                        if self._merge_participant_allocations(
+                            self.state['participants'][det_code],
+                            p_data.get('allocations'),
+                            p_data.get('alloc_ts'),
+                            max_stage=3
+                        ):
+                            changed = True
 
                 if changed:
                     self._rebuild_simulation(cur_cards)
@@ -619,13 +649,25 @@ class GameEngine:
                     if not self.is_participant_session_expired(name, p_sess):
                         need_force_refresh = det_code not in self.state['participants']
                         if not need_force_refresh and session_matches and isinstance(participant_sync.get('allocations'), dict):
-                            existing_allocs = self.state['participants'][det_code].get('allocations', {})
+                            existing_p = self.state['participants'][det_code]
+                            existing_allocs = existing_p.get('allocations', {})
+                            existing_ts = existing_p.get('alloc_ts', {})
+                            inc_ts_map = participant_sync.get('alloc_ts') if isinstance(participant_sync.get('alloc_ts'), dict) else {}
                             max_stage = int(self.state.get('current_stage', 1))
                             for stg in participant_sync['allocations']:
                                 stg_str = str(stg)
-                                if stg_str in ('1', '2', '3') and int(stg_str) <= max_stage and stg_str not in existing_allocs:
-                                    need_force_refresh = True
-                                    break
+                                if stg_str in ('1', '2', '3') and int(stg_str) <= max_stage:
+                                    try:
+                                        inc_ts = int(inc_ts_map.get(stg_str, 0) or 0)
+                                    except (TypeError, ValueError):
+                                        inc_ts = 0
+                                    try:
+                                        cur_ts = int(existing_ts.get(stg_str, 0) or 0)
+                                    except (TypeError, ValueError):
+                                        cur_ts = 0
+                                    if stg_str not in existing_allocs or inc_ts > cur_ts:
+                                        need_force_refresh = True
+                                        break
 
                         if need_force_refresh and self.redis_url and self.redis_token:
                             self.refresh_state(force=True)
@@ -633,11 +675,13 @@ class GameEngine:
                             session_matches = (p_sess == cur_session) or (p_sess == 0) or (cur_session <= 1)
 
                         if not self.is_participant_session_expired(name, p_sess):
+                            p_changed = False
                             if det_code not in self.state['participants']:
                                 self.state['participants'][det_code] = {
                                     'code': det_code,
                                     'name': name,
                                     'allocations': {},
+                                    'alloc_ts': {},
                                     'current_value': self.config['initial_capital'],
                                     'prev_value': self.config['initial_capital'],
                                     'current_rank': 1,
@@ -645,25 +689,23 @@ class GameEngine:
                                     'max_drawdown': 0.0,
                                     'history': []
                                 }
+                                p_changed = True
+
+                            if session_matches and self._merge_participant_allocations(
+                                self.state['participants'][det_code],
+                                participant_sync.get('allocations'),
+                                participant_sync.get('alloc_ts'),
+                                max_stage=int(self.state.get('current_stage', 1))
+                            ):
+                                p_changed = True
+
+                            if p_changed:
                                 changed = True
-
-                            if session_matches and isinstance(participant_sync.get('allocations'), dict):
-                                cur_allocs = self.state['participants'][det_code].setdefault('allocations', {})
-                                max_stage = int(self.state.get('current_stage', 1))
-                                for stg, alloc in participant_sync['allocations'].items():
-                                    stg_str = str(stg)
-                                    if stg_str in ('1', '2', '3') and int(stg_str) <= max_stage and stg_str not in cur_allocs:
-                                        valid_alloc = self.sanitize_allocation(alloc)
-                                        if valid_alloc:
-                                            cur_allocs[stg_str] = valid_alloc
-                                            changed = True
-
-                            if changed:
                                 self._rebuild_simulation()
 
             if changed:
                 self._public_state_cache = None
-                self.save_state(bump_version=False)
+                self.save_state(bump_version=True)
 
     def is_participant_session_expired(self, name, session_id):
         """True when a player from an earlier session is no longer in the roster (reset without preserve)."""
@@ -734,6 +776,7 @@ class GameEngine:
                 'code': det_code,
                 'name': name,
                 'allocations': {},
+                'alloc_ts': {},
                 'current_value': self.config['initial_capital'],
                 'prev_value': self.config['initial_capital'],
                 'current_rank': len(self.state['participants']) + 1,
@@ -793,7 +836,11 @@ class GameEngine:
             if round(total) != 100:
                 raise ValueError(f"Total alokasi harus tepat 100% (saat ini {round(total)}%)")
 
-            self.state['participants'][code]['allocations'][str(stage)] = clean_alloc
+            now_ms = int(datetime.now().timestamp() * 1000)
+            alloc_ts = self.state['participants'][code].setdefault('alloc_ts', {})
+            prev_ts = int(alloc_ts.get(str(stage), 0) or 0)
+            alloc_ts[str(stage)] = max(prev_ts + 1, now_ms)
+            self.state['participants'][code].setdefault('allocations', {})[str(stage)] = clean_alloc
             self._rebuild_simulation()
             self.save_state()
             return clean_alloc
@@ -844,13 +891,6 @@ class GameEngine:
 
             self.state['current_stage'] += 1
             self.state['stage_input_open'] = True
-
-            # Pre-populate next stage allocations from previous stage if not set
-            curr_stage_str = str(self.state['current_stage'])
-            for p in list(self.state['participants'].values()):
-                if 'allocations' in p and curr_stage_str not in p['allocations']:
-                    prev_alloc = self.get_effective_allocation(p['code'], self.state['current_stage'] - 1)
-                    p['allocations'][curr_stage_str] = dict(prev_alloc)
 
             self.state['message'] = f"Memasuki Tahap {self.state['current_stage']}. Sesi perubahan alokasi dibuka!"
             self._bump_version()
@@ -1115,6 +1155,7 @@ class GameEngine:
                     'code': code,
                     'name': team_name,
                     'allocations': allocations,
+                    'alloc_ts': {k: 1 for k in allocations},
                     'current_value': self.config['initial_capital'],
                     'prev_value': self.config['initial_capital'],
                     'current_rank': i,
@@ -1132,6 +1173,10 @@ class GameEngine:
     def get_public_state(self):
         """Returns clean state for API."""
         with self.lock:
+            alloc_sig = tuple(sorted(
+                (code, tuple(sorted((str(k), int(v or 0)) for k, v in p.get('alloc_ts', {}).items())))
+                for code, p in self.state.get('participants', {}).items()
+            ))
             cache_key = (
                 self.state.get('session_id', 1),
                 self.state.get('state_version', 1),
@@ -1142,7 +1187,8 @@ class GameEngine:
                 self.state.get('current_stage', 1),
                 self.state.get('stage_input_open', False),
                 self.state.get('total_stages', 3),
-                self.state.get('message', '')
+                self.state.get('message', ''),
+                alloc_sig
             )
             if self._public_state_cache is not None and self._public_state_cache_key == cache_key:
                 return self._public_state_cache
@@ -1166,7 +1212,8 @@ class GameEngine:
                     code: {
                         'code': p['code'],
                         'name': p['name'],
-                        'allocations': p.get('allocations', {})
+                        'allocations': p.get('allocations', {}),
+                        'alloc_ts': dict(p.get('alloc_ts', {}))
                     }
                     for code, p in list(self.state.get('participants', {}).items())
                 },

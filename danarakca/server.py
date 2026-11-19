@@ -181,10 +181,11 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
             writer = csv.writer(output)
             writer.writerow(['Peringkat', 'Nama Tim', 'Nilai Portofolio', 'Return Kumulatif (%)', 'Max Drawdown (%)', 'Tahap 1 Alloc', 'Tahap 2 Alloc', 'Tahap 3 Alloc'])
             lb = engine.get_leaderboard()
+            curr_stage = int(engine.state.get('current_stage', 1))
             for p in lb:
-                t1 = p.get('allocations', {}).get('1', {})
-                t2 = p.get('allocations', {}).get('2', {})
-                t3 = p.get('allocations', {}).get('3', {})
+                t1 = engine.get_effective_allocation(p['code'], 1)
+                t2 = engine.get_effective_allocation(p['code'], 2) if curr_stage >= 2 else {}
+                t3 = engine.get_effective_allocation(p['code'], 3) if curr_stage >= 3 else {}
                 return_pct = round((p['current_value'] / engine.config['initial_capital'] - 1) * 100, 2)
                 mdd_pct = round(p.get('max_drawdown', 0.0) * 100, 2)
                 writer.writerow([

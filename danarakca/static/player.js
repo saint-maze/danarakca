@@ -32,6 +32,7 @@ let userIsEditing = false;
 let submitInFlight = false;
 let lastLoadedStage = null;
 let savedAllocations = {};
+let savedAllocTs = {};
 
 function renderInstantCardPreview(round, card) {
   const preview = document.getElementById('playerCardPreview');
@@ -178,11 +179,23 @@ function loadSavedAllocations() {
   } catch (e) {
     savedAllocations = {};
   }
+  try {
+    const rawTs = localStorage.getItem('danarakca_alloc_ts');
+    if (rawTs) {
+      const parsedTs = JSON.parse(rawTs);
+      if (parsedTs && typeof parsedTs === 'object') {
+        savedAllocTs = parsedTs;
+      }
+    }
+  } catch (e) {
+    savedAllocTs = {};
+  }
 }
 
 function persistSavedAllocations() {
   try {
     localStorage.setItem('danarakca_allocations', JSON.stringify(savedAllocations));
+    localStorage.setItem('danarakca_alloc_ts', JSON.stringify(savedAllocTs));
   } catch (e) {}
 }
 
@@ -193,7 +206,8 @@ function buildParticipantSync() {
     code: currentUser.code,
     name: currentUser.name,
     session_id: gameState ? (gameState.session_id || savedSess) : savedSess,
-    allocations: savedAllocations
+    allocations: savedAllocations,
+    alloc_ts: savedAllocTs
   };
 }
 
@@ -294,6 +308,7 @@ async function handleLogin(e) {
       }
       if (p.allocations && Object.keys(p.allocations).length > 0) {
         savedAllocations = { ...p.allocations };
+        savedAllocTs = (p.alloc_ts && typeof p.alloc_ts === 'object') ? { ...p.alloc_ts } : {};
         persistSavedAllocations();
       }
       currentUser = { code: p.code, name: p.name };
@@ -327,10 +342,12 @@ function clearPlayerSession() {
   localStorage.removeItem('danarakca_code');
   localStorage.removeItem('danarakca_name');
   localStorage.removeItem('danarakca_allocations');
+  localStorage.removeItem('danarakca_alloc_ts');
   localStorage.removeItem('danarakca_session_id');
   currentUser = null;
   participantData = null;
   savedAllocations = {};
+  savedAllocTs = {};
   allocation = { sukuk: 20, saham: 20, rdpu: 20, emas: 20, campuran: 20 };
   userIsEditing = false;
   lastLoadedStage = null;
@@ -363,6 +380,7 @@ function applyPlayerSyncResponse(newState, newParticipant, force = false) {
     // Detect game reset by Facilitator
     if (curSess > 0 && newSess > curSess) {
       savedAllocations = {};
+      savedAllocTs = {};
       persistSavedAllocations();
       localStorage.setItem('danarakca_session_id', String(newSess));
       allocation = { sukuk: 20, saham: 20, rdpu: 20, emas: 20, campuran: 20 };
@@ -398,7 +416,16 @@ function applyPlayerSyncResponse(newState, newParticipant, force = false) {
       localStorage.setItem('danarakca_code', newParticipant.code);
     }
     if (newParticipant.allocations && typeof newParticipant.allocations === 'object') {
-      savedAllocations = { ...newParticipant.allocations, ...savedAllocations };
+      const incAllocs = newParticipant.allocations;
+      const incTsMap = (newParticipant.alloc_ts && typeof newParticipant.alloc_ts === 'object') ? newParticipant.alloc_ts : {};
+      for (const stg of Object.keys(incAllocs)) {
+        const incTs = Number(incTsMap[stg] || 0);
+        const curTs = Number(savedAllocTs[stg] || 0);
+        if (!savedAllocations[stg] || incTs > curTs) {
+          savedAllocations[stg] = { ...incAllocs[stg] };
+          savedAllocTs[stg] = Math.max(curTs, incTs, 1);
+        }
+      }
       persistSavedAllocations();
     }
     participantData = newParticipant;
@@ -746,6 +773,7 @@ async function handleAllocationSubmit(e) {
 
   const stageKey = String(gameState.current_stage);
   savedAllocations[stageKey] = { ...allocation };
+  savedAllocTs[stageKey] = Math.max((savedAllocTs[stageKey] || 0) + 1, Date.now());
   persistSavedAllocations();
 
   try {
@@ -768,6 +796,8 @@ async function handleAllocationSubmit(e) {
       showToast(`Alokasi portofolio Tahap ${gameState.current_stage} berhasil disimpan!`, 'success');
       userIsEditing = false;
       lastLoadedStage = gameState.current_stage;
+      savedAllocTs[stageKey] = json.participant?.alloc_ts?.[stageKey] || savedAllocTs[stageKey] || Date.now();
+      persistSavedAllocations();
       applyPlayerSyncResponse(json.state, json.participant, true);
     } else if (json.session_expired) {
       forceRelogin(null);

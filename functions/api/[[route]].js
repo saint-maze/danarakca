@@ -105,8 +105,15 @@ function getEffectiveAllocation(participant, stage) {
   return { sukuk: 20, saham: 20, rdpu: 20, emas: 20, campuran: 20 };
 }
 
+function compareLeaderboard(a, b) {
+  return (b.current_value - a.current_value)
+    || ((a.max_drawdown || 0) - (b.max_drawdown || 0))
+    || String(a.name || '').localeCompare(String(b.name || ''))
+    || String(a.code || '').localeCompare(String(b.code || ''));
+}
+
 function getLeaderboard(state, limit = null) {
-  const sorted = Object.values(state.participants || {}).sort((a, b) => b.current_value - a.current_value);
+  const sorted = Object.values(state.participants || {}).sort(compareLeaderboard);
   if (limit) return sorted.slice(0, limit);
   return sorted;
 }
@@ -118,7 +125,12 @@ function getPublicState(state, config) {
   const maxDdLimit = config.max_drawdown_award || 0.10;
   let tangguh = sorted.filter(p => (p.max_drawdown || 0) <= maxDdLimit).slice(0, 5);
   if (tangguh.length === 0 && sorted.length > 0) {
-    tangguh = [...sorted].sort((a, b) => ((a.max_drawdown || 0) - (b.max_drawdown || 0)) || (b.current_value - a.current_value)).slice(0, 5);
+    tangguh = [...sorted].sort((a, b) =>
+      ((a.max_drawdown || 0) - (b.max_drawdown || 0))
+      || (b.current_value - a.current_value)
+      || String(a.name || '').localeCompare(String(b.name || ''))
+      || String(a.code || '').localeCompare(String(b.code || ''))
+    ).slice(0, 5);
   }
 
   return {
@@ -402,7 +414,7 @@ export async function onRequest(context) {
 
         // Update ranks
         const sortedCodes = Object.keys(state.participants || {}).sort(
-          (a, b) => state.participants[b].current_value - state.participants[a].current_value
+          (a, b) => compareLeaderboard(state.participants[a], state.participants[b])
         );
         sortedCodes.forEach((c, idx) => {
           const rank = idx + 1;
