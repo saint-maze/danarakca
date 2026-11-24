@@ -43,9 +43,5 @@
       "base_return": 0.0074,
       "desc": "Kombinasi saham, obligasi & pasar uang dengan risiko moderat."
     }
-  ],
-  "admin": {
-    "username": "cihuy",
-    "password": "burd@c"
-  }
+  ]
 }

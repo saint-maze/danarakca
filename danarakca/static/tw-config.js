@@ -9,8 +9,9 @@ tailwind.config = {
         ash: '#c1c1c1',
         graphite: '#212121',
         iron: '#474747',
-        compass: '#6f6759',
-        slatecard: '#3b3d45',
+        'border-ui': '#666666',
+        'compass-gold': '#6f6759',
+        'card-slate': '#3b3d45',
         pulse: '#98ff38',
         loss: '#ff7a6b',
         sukuk: '#8fb3d9',
@@ -35,7 +36,9 @@ tailwind.config = {
       },
       borderRadius: {
         tag: '4px',
-        card: '8px'
+        card: '8px',
+        button: '8px',
+        pill: '9999px'
       },
       maxWidth: {
         page: '1200px'

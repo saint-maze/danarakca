@@ -4,99 +4,71 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Login Admin</title>
+  <title>Portal Admin - Danarakca</title>
   <link rel="icon" type="image/png" href="img/thunderbolt.png">
   <link rel="apple-touch-icon" href="img/thunderbolt.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&display=swap"
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400&family=JetBrains+Mono:wght@400&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=2.4">
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            obsidian: '#101010',
-            carbon: '#080808',
-            chalk: '#f3f3f3',
-            smoke: '#9c9c9c',
-            ash: '#c1c1c1',
-            graphite: '#212121',
-            iron: '#474747',
-            pulse: '#98ff38',
-            loss: '#ff7a6b'
-          },
-          fontFamily: {
-            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-            mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace']
-          },
-          borderRadius: {
-            tag: '4px',
-            card: '8px'
-          }
-        }
-      }
-    };
-  </script>
+  <script src="tw-config.js?v=2.4"></script>
 </head>
 
-<body class="bg-obsidian text-chalk min-h-screen flex flex-col justify-between">
+<body class="bg-obsidian text-chalk min-h-screen flex flex-col justify-between overflow-x-hidden">
 
-  <!-- Header -->
   <header class="hairline-b bg-obsidian">
-    <div class="w-full max-w-[1600px] mx-auto px-4 sm:px-10 py-3.5 sm:py-4 flex items-center justify-between">
-      <div class="flex items-center gap-3.5">
-        <img src="img/logo-danarakca.png" alt="Logo Danarakca"
-          class="h-11 sm:h-12 w-auto object-contain shrink-0 drop-shadow-sm">
-        <a href="index.html"
-          class="text-heading-xs tracking-tight text-chalk hover:text-ash transition-colors font-medium">
-          Danarakca
+    <div class="w-full max-w-page mx-auto px-4 sm:px-8 py-3.5 sm:py-4 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3.5 min-w-0">
+        <a href="index.html" class="flex items-center gap-3 no-underline min-h-[44px]">
+          <img src="img/logo-danarakca.png" alt="Logo Danarakca"
+            class="h-11 sm:h-12 w-auto object-contain shrink-0">
+          <span
+            class="text-heading-xs tracking-tight text-chalk hover:text-ash transition-colors">
+            Danarakca
+          </span>
         </a>
-        <span class="text-caption text-smoke hidden sm:inline font-mono text-xs">/ Portal Admin</span>
+        <span class="text-smoke hidden sm:inline font-mono text-xs">/ Portal Admin</span>
       </div>
-      <a href="index.html" class="text-caption text-smoke hover:text-chalk font-mono text-xs">
+      <a href="index.html" class="inline-flex items-center min-h-[44px] px-2 text-smoke hover:text-chalk font-mono text-xs no-underline">
         ← Kembali ke Beranda
       </a>
     </div>
   </header>
 
-  <!-- Login Main -->
-  <main class="flex-grow flex items-center justify-center p-6 relative">
-    <div class="absolute inset-0 dot-field pointer-events-none opacity-40"></div>
+  <main class="flex-grow flex items-center justify-center p-4 sm:p-6 relative">
+    <div class="absolute inset-0 dot-field pointer-events-none opacity-40" aria-hidden="true"></div>
 
     <div class="w-full max-w-md relative z-10">
 
-      <div class="panel-deep p-8 sm:p-10">
+      <div class="panel-deep p-6 sm:p-10">
 
         <div class="mb-8">
           <div class="meta mb-2">Autentikasi Admin</div>
-          <h1 class="text-heading-sm text-chalk mb-2">Login Admin</h1>
+          <h1 class="text-heading-sm text-chalk mb-2">Portal Admin</h1>
           <p class="text-caption text-smoke leading-relaxed">
-            Akses khusus Admin untuk mengundi kartu skenario, membuka sesi input alokasi peserta, dan mengelola tahap
-            permainan.
+            Akses khusus fasilitator untuk mengundi kartu skenario, membuka sesi input alokasi peserta, dan mengelola tahap permainan.
           </p>
         </div>
 
-        <!-- Error Message Banner -->
-        <div id="errorAlert"
+        <div id="errorAlert" role="alert" aria-live="polite"
           class="hidden mb-6 p-4 rounded-card hairline bg-carbon text-loss text-caption leading-relaxed">
           <span id="errorAlertText">Kredensial tidak valid.</span>
         </div>
 
         <form id="adminLoginForm" onsubmit="handleAdminLogin(event)" class="space-y-5">
           <div>
-            <label for="username" class="block meta mb-2">ID</label>
+            <label for="username" class="block meta mb-2">ID Admin</label>
             <input type="text" id="username" name="username" required autocomplete="username"
               placeholder="Masukkan ID admin..." class="field font-mono">
           </div>
 
           <div>
-            <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center justify-between mb-1">
               <label for="password" class="block meta">Password</label>
-              <button type="button" onclick="togglePasswordVisibility()"
-                class="text-caption text-smoke hover:text-chalk" id="togglePassBtn">
+              <button type="button" onclick="togglePasswordVisibility()" aria-pressed="false"
+                class="min-h-[44px] inline-flex items-center px-2 text-caption text-smoke hover:text-chalk cursor-pointer" id="togglePassBtn">
                 Tampilkan
               </button>
             </div>
@@ -106,13 +78,13 @@
 
           <div class="pt-2">
             <button type="submit" id="submitBtn" class="btn-pill w-full">
-              Masuk ke Page Admin ↗
+              Masuk ke Portal Admin
             </button>
           </div>
         </form>
 
-        <div class="mt-8 pt-6 hairline-t flex items-center justify-end text-caption text-smoke">
-          <a href="player.html" class="hover:text-chalk">Masuk Peserta →</a>
+        <div class="mt-8 pt-4 hairline-t flex items-center justify-end text-caption text-smoke">
+          <a href="player.html" class="inline-flex items-center min-h-[44px] px-2 hover:text-chalk no-underline">Masuk Peserta →</a>
         </div>
 
       </div>
@@ -120,9 +92,8 @@
     </div>
   </main>
 
-  <!-- Footer -->
   <footer class="hairline-t bg-obsidian py-4 text-center text-caption text-smoke">
-    Admin Danarakca \\\ Restricted
+    Danarakca · Portal Admin
   </footer>
 
   <script>
@@ -146,13 +117,10 @@
     function togglePasswordVisibility() {
       const input = document.getElementById('password');
       const btn = document.getElementById('togglePassBtn');
-      if (input.type === 'password') {
-        input.type = 'text';
-        btn.innerText = 'Sembunyikan';
-      } else {
-        input.type = 'password';
-        btn.innerText = 'Tampilkan';
-      }
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.innerText = show ? 'Sembunyikan' : 'Tampilkan';
+      btn.setAttribute('aria-pressed', String(show));
     }
 
     async function handleAdminLogin(e) {
@@ -187,7 +155,7 @@
         alertBox.classList.remove('hidden');
       } finally {
         btn.disabled = false;
-        btn.innerText = 'Masuk ke Konsol Kendali ↗';
+        btn.innerText = 'Masuk ke Portal Admin';
       }
     }
   </script>

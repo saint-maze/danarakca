@@ -1,4 +1,4 @@
-// Facilitator View Logic — Hyperstudio Dark Editorial Edition
+// Facilitator View Logic (Hyperstudio Dark Editorial Edition)
 
 const LIVE_CHANNEL = 'danarakca_live_fafc19b30c66';
 let facilitatorEventSource = null;
@@ -48,18 +48,8 @@ function initFacilitatorRealtimeStream() {
       facilitatorSseActive = true;
       facilitatorSseErrors = 0;
     };
-    facilitatorEventSource.onmessage = (e) => {
-      try {
-        const raw = JSON.parse(e.data);
-        if (raw.event !== 'message' || !raw.message) return;
-        const msg = typeof raw.message === 'string' ? JSON.parse(raw.message) : raw.message;
-        if (gameState && msg && msg.session_id === gameState.session_id && msg.state_version && gameState.state_version >= msg.state_version) {
-          return;
-        }
-        fetchState();
-      } catch (err) {
-        fetchState();
-      }
+    facilitatorEventSource.onmessage = () => {
+      fetchState();
     };
     facilitatorEventSource.onerror = () => {
       facilitatorSseErrors++;
@@ -76,12 +66,23 @@ function initFacilitatorRealtimeStream() {
 }
 
 let gameState = null;
-let currentTab = 'top10'; // 'top10' or 'tangguh'
+let currentTab = 'top10';
 let chartTopPlayers = null;
 let chartAssetIndexes = null;
 let lastRecentCardsHash = '';
 let lastLeaderboardHash = '';
 let lastChartsHash = '';
+let cachedQrUrl = null;
+let cachedQrHtml = null;
+let lastModalTrigger = null;
+
+const ASSET_META = [
+  ['sukuk', 'Sukuk'],
+  ['saham', 'Saham'],
+  ['rdpu', 'Rdpu'],
+  ['emas', 'Emas'],
+  ['campuran', 'Campuran']
+];
 
 function escapeHtml(str) {
   return String(str ?? '')
@@ -110,8 +111,39 @@ function formatPercent(num, withSign = true) {
   return pct + '%';
 }
 
+function setSyncError(message) {
+  const banner = document.getElementById('syncErrorBanner');
+  const text = document.getElementById('syncErrorText');
+  if (!banner) return;
+  if (message) {
+    if (text) text.innerText = message;
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
+}
+
+function setActionButtonsDisabled(disabled) {
+  document.querySelectorAll('[data-action-btn="1"]').forEach(btn => {
+    btn.disabled = disabled;
+  });
+  if (!disabled && gameState) {
+    renderUI();
+  }
+}
+
 // Chart.js initialization with DESIGN.md color tokens
 function initCharts() {
+  if (typeof Chart !== 'function') {
+    const emptyTop = document.getElementById('chartTopEmpty');
+    const emptyAsset = document.getElementById('chartAssetEmpty');
+    if (emptyTop) {
+      emptyTop.classList.remove('hidden');
+      emptyTop.innerText = 'Grafik tidak tersedia saat pustaka grafik gagal dimuat.';
+    }
+    if (emptyAsset) emptyAsset.classList.remove('hidden');
+    return;
+  }
   const chartOptionsBase = {
     responsive: true,
     maintainAspectRatio: false,
@@ -193,15 +225,47 @@ async function verifyAdminAuth() {
       headers: { 'X-Admin-Token': token }
     });
     const json = await res.json();
-    if (!json.success || !json.authenticated) {
+    if (!res.ok || !json.success || !json.authenticated) {
       localStorage.removeItem('danarakca_admin_token');
       window.location.href = 'admin-login.html';
       return false;
     }
+    setSyncError(null);
     return true;
   } catch (err) {
     console.error('Auth verification error:', err);
-    return true;
+    setSyncError('Gagal memverifikasi sesi admin ke server. Periksa koneksi lalu klik Coba Lagi.');
+    setActionButtonsDisabled(true);
+    const badgeTime = document.getElementById('badgeSimTime');
+    const phTitle = document.getElementById('cardPlaceholderTitle');
+    const phDesc = document.getElementById('cardPlaceholderDesc');
+    const tbody = document.getElementById('leaderboardTbody');
+    if (badgeTime) badgeTime.innerText = 'Offline';
+    if (phTitle) phTitle.innerText = 'Koneksi Server Terputus';
+    if (phDesc) phDesc.innerText = 'Tidak dapat memverifikasi sesi admin. Klik Coba Lagi di banner atas setelah koneksi pulih.';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-center py-10 text-smoke italic">Data belum dapat dimuat.</td></tr>';
+    return false;
+  }
+}
+
+let facilitatorInitialized = false;
+let retryInFlight = false;
+
+async function retryFacilitatorInit() {
+  if (retryInFlight || facilitatorInitialized) return;
+  retryInFlight = true;
+  try {
+    setSyncError(null);
+    const isAuthed = await verifyAdminAuth();
+    if (!isAuthed) return;
+    facilitatorInitialized = true;
+    setActionButtonsDisabled(actionInFlight || drawCooldown);
+    if (!chartTopPlayers || !chartAssetIndexes) initCharts();
+    initFacilitatorRealtimeStream();
+    await fetchState();
+    scheduleFacilitatorPoll();
+  } finally {
+    retryInFlight = false;
   }
 }
 
@@ -219,13 +283,13 @@ function adminLogout() {
   });
 }
 
-// In-App Toast Notification (Pengganti alert() basic)
+// In-App Toast Notification
 function showToast(msg, type = 'info') {
   const container = document.getElementById('toastContainer');
   if (!container) return;
   const toast = document.createElement('div');
   const borderCol = type === 'error' ? 'border-loss text-loss' : (type === 'success' ? 'border-pulse text-chalk' : 'border-graphite text-chalk');
-  toast.className = `panel px-4 py-3 bg-carbon text-caption pointer-events-auto shadow-2xl flex items-center gap-2.5 rounded-card card-in ${borderCol}`;
+  toast.className = `panel px-4 py-3 bg-carbon text-caption pointer-events-auto flex items-center gap-2.5 rounded-card card-in ${borderCol}`;
   const span = document.createElement('span');
   span.textContent = String(msg ?? '');
   toast.appendChild(span);
@@ -238,7 +302,7 @@ function showToast(msg, type = 'info') {
   }, 3500);
 }
 
-// Modal Konfirmasi Operasional (Pengganti confirm() basic)
+// Modal Konfirmasi Operasional
 let confirmResolver = null;
 
 function showConfirmDialog({
@@ -252,6 +316,7 @@ function showConfirmDialog({
 } = {}) {
   return new Promise((resolve) => {
     confirmResolver = resolve;
+    lastModalTrigger = document.activeElement;
 
     const metaEl = document.getElementById('confirmModalMeta');
     const titleEl = document.getElementById('confirmModalTitle');
@@ -275,11 +340,7 @@ function showConfirmDialog({
     const btnOkText = document.getElementById('confirmModalBtnOkText');
     if (btnOkText) btnOkText.innerText = okText;
     if (btnOk) {
-      if (isDanger) {
-        btnOk.className = 'btn-pill text-caption py-2 px-5 bg-loss text-chalk hover:bg-loss/80 transition-colors cursor-pointer';
-      } else {
-        btnOk.className = 'btn-pill text-caption py-2 px-5 cursor-pointer';
-      }
+      btnOk.className = isDanger ? 'btn-danger text-caption px-5' : 'btn-pill text-caption px-5';
       btnOk.onclick = () => {
         const checked = checkboxEl ? checkboxEl.checked : false;
         closeConfirmModal(true, checked);
@@ -287,13 +348,21 @@ function showConfirmDialog({
     }
 
     const modal = document.getElementById('modalConfirm');
-    if (modal) modal.classList.remove('hidden');
+    if (modal) {
+      modal.classList.remove('hidden');
+      const cancelBtn = document.getElementById('confirmModalBtnCancel');
+      if (cancelBtn) cancelBtn.focus();
+    }
   });
 }
 
 function closeConfirmModal(result = false, extraData = false) {
   const modal = document.getElementById('modalConfirm');
   if (modal) modal.classList.add('hidden');
+  if (lastModalTrigger && typeof lastModalTrigger.focus === 'function') {
+    lastModalTrigger.focus();
+    lastModalTrigger = null;
+  }
   if (confirmResolver) {
     const res = confirmResolver;
     confirmResolver = null;
@@ -381,7 +450,6 @@ function applyIncomingState(newState, force = false) {
 
       const isSameEpoch = (newEpoch === curEpoch);
       if (isSameEpoch) {
-        // 1. Merge known participants so incoming lagging state never drops them or older allocations
         if (gameState.participants_sync) {
           newState.participants_sync = mergeParticipantsSync(gameState.participants_sync, newState.participants_sync);
         }
@@ -390,7 +458,6 @@ function applyIncomingState(newState, force = false) {
         const curTotalP = gameState.total_participants || 0;
         const newTotalP = newState.total_participants || 0;
 
-        // 2. Prevent round or participant rollback from lagging/partial containers
         if (newRound < curRound) {
           newState.current_round = curRound;
           newState.drawn_card_ids = gameState.drawn_card_ids || [];
@@ -404,7 +471,6 @@ function applyIncomingState(newState, force = false) {
           newState.leaderboard_top10 = gameState.leaderboard_top10;
           newState.investor_tangguh_top5 = gameState.investor_tangguh_top5 || newState.investor_tangguh_top5;
         }
-        // 3. Preserve leaderboard if incoming is empty but local already had active participants
         if ((!newState.leaderboard_top10 || newState.leaderboard_top10.length === 0) && (gameState.leaderboard_top10 && gameState.leaderboard_top10.length > 0)) {
           newState.leaderboard_top10 = gameState.leaderboard_top10;
         }
@@ -414,7 +480,6 @@ function applyIncomingState(newState, force = false) {
         const syncCount = Object.keys(newState.participants_sync || {}).length;
         newState.total_participants = Math.max(newTotalP, syncCount, curTotalP);
 
-        // If incoming version is older and not forced, keep current state after merging participants
         if (!force && newVer < curVer) {
           return;
         }
@@ -422,6 +487,7 @@ function applyIncomingState(newState, force = false) {
     }
   }
   gameState = newState;
+  setSyncError(null);
   renderUI();
 }
 
@@ -438,21 +504,28 @@ async function fetchState() {
       body: JSON.stringify({ client_sync: buildClientSync() })
     });
     const json = await res.json();
-    if (json.success && !actionInFlight) {
+    if (res.ok && json.success && !actionInFlight) {
       applyIncomingState(json.data, false);
+    } else if (!res.ok) {
+      setSyncError(json.error || 'Gagal menyinkronkan status permainan.');
     }
   } catch (err) {
     console.error('Error fetching state:', err);
+    setSyncError('Koneksi ke server terputus. Mengulang sinkronisasi...');
   }
 }
 
 function renderUI() {
   if (!gameState) return;
 
+  const actionBusy = actionInFlight || drawCooldown;
+  document.querySelectorAll('[data-action-btn="1"]').forEach(btn => {
+    btn.disabled = actionBusy;
+  });
+
   const round = gameState.current_round;
   const totalRounds = gameState.total_rounds;
 
-  // Badges
   document.getElementById('badgeRound').innerText = `${round} / ${totalRounds}`;
 
   if (round === 0) {
@@ -466,14 +539,9 @@ function renderUI() {
   document.getElementById('badgeStage').innerText = `${gameState.current_stage} / ${gameState.total_stages}`;
   document.getElementById('badgeParticipants').innerText = `${gameState.total_participants}`;
 
-  const top1 = gameState.leaderboard_top10[0];
-  if (top1) {
-    document.getElementById('badgeHighestWealth').innerText = formatJuta(top1.current_value);
-  } else {
-    document.getElementById('badgeHighestWealth').innerText = 'Rp 100,0 Jt';
-  }
+  const top1 = (gameState.leaderboard_top10 || [])[0];
+  document.getElementById('badgeHighestWealth').innerText = top1 ? formatJuta(top1.current_value) : 'Rp 100,0 Jt';
 
-  // Draw Button
   const nextRound = round + 1;
   const btnDraw = document.getElementById('btnDrawCard');
   const btnDrawText = document.getElementById('btnDrawCardText');
@@ -482,22 +550,25 @@ function renderUI() {
     btnDraw.disabled = true;
     btnDrawText.innerText = 'Permainan Selesai';
   } else {
-    btnDraw.disabled = false;
+    btnDraw.disabled = actionBusy;
     btnDrawText.innerText = `Kocok Kartu Putaran ${nextRound}`;
   }
 
-  // Toggle Input Button
+  // Toggle Input Button (solid token contrast instead of opacity-60)
   const btnToggle = document.getElementById('btnToggleInput');
   const btnToggleText = document.getElementById('btnToggleInputText');
-  if (gameState.stage_input_open) {
-    btnToggleText.innerText = 'Input Alokasi: Terbuka';
-    btnToggle.classList.remove('opacity-60');
-  } else {
-    btnToggleText.innerText = 'Input Alokasi: Ditutup';
-    btnToggle.classList.add('opacity-60');
+  if (btnToggle) {
+    btnToggle.disabled = actionBusy;
+    btnToggle.setAttribute('aria-pressed', gameState.stage_input_open ? 'true' : 'false');
+    if (gameState.stage_input_open) {
+      btnToggleText.innerText = 'Input Alokasi: Terbuka';
+      btnToggle.className = 'btn-ghost px-3 sm:px-4 text-caption font-mono text-center justify-center border-chalk text-chalk';
+    } else {
+      btnToggleText.innerText = 'Input Alokasi: Ditutup';
+      btnToggle.className = 'btn-ghost px-3 sm:px-4 text-caption font-mono text-center justify-center border-ui text-smoke';
+    }
   }
 
-  // Next Stage Button: only enabled when all rounds of current stage are completed AND currentStage < total_stages
   const btnNextStage = document.getElementById('btnNextStage');
   const btnNextStageText = document.getElementById('btnNextStageText');
   const currentStage = gameState.current_stage;
@@ -512,17 +583,19 @@ function renderUI() {
     const roundsInCurrentStage = Math.max(0, round - ((currentStage - 1) * roundsPerStage));
     btnNextStageText.innerText = `Maju ke Tahap ${currentStage + 1} (${roundsInCurrentStage}/${roundsPerStage} Putaran)`;
   } else {
-    btnNextStage.disabled = false;
-    btnNextStageText.innerText = `Maju ke Tahap ${currentStage + 1} ↗`;
+    btnNextStage.disabled = actionBusy;
+    btnNextStageText.innerText = `Maju ke Tahap ${currentStage + 1}`;
   }
 
-  // Update Booth Mode Buttons (1, 2, or 3 Stages)
   updateModeButtonsUI(gameState.total_stages);
 
-  // Card Content
   const lastCard = gameState.last_drawn_card;
   const placeholder = document.getElementById('cardPlaceholder');
   const cardContent = document.getElementById('cardContent');
+  const phTitle = document.getElementById('cardPlaceholderTitle');
+  const phDesc = document.getElementById('cardPlaceholderDesc');
+  if (phTitle) phTitle.innerText = 'Belum Ada Kartu yang Dikocok';
+  if (phDesc) phDesc.innerText = 'Peserta dapat mengatur alokasi di ponsel masing-masing. Klik tombol "Kocok Kartu Putaran 1" di atas untuk memicu skenario ekonomi makro.';
 
   if (lastCard && lastCard.card) {
     placeholder.classList.add('hidden');
@@ -536,18 +609,12 @@ function renderUI() {
     document.getElementById('cardNarration').innerText = c.narration;
     document.getElementById('cardExplanation').innerText = c.explanation;
 
-    const ret = lastCard.returns;
-    const baseSukuk = gameState.config.assets.find(a => a.id === 'sukuk')?.base_return || 0;
-    const baseSaham = gameState.config.assets.find(a => a.id === 'saham')?.base_return || 0;
-    const baseRdpu = gameState.config.assets.find(a => a.id === 'rdpu')?.base_return || 0;
-    const baseEmas = gameState.config.assets.find(a => a.id === 'emas')?.base_return || 0;
-    const baseCampuran = gameState.config.assets.find(a => a.id === 'campuran')?.base_return || 0;
-
-    setImpactUI('Sukuk', ret.sukuk, baseSukuk, c.return_sukuk);
-    setImpactUI('Saham', ret.saham, baseSaham, c.return_saham);
-    setImpactUI('Rdpu', ret.rdpu, baseRdpu, c.return_rdpu);
-    setImpactUI('Emas', ret.emas, baseEmas, c.return_emas);
-    setImpactUI('Campuran', ret.campuran, baseCampuran, c.return_campuran);
+    const ret = lastCard.returns || {};
+    const assets = (gameState.config && gameState.config.assets) || [];
+    for (const [id, domKey] of ASSET_META) {
+      const baseRet = assets.find(a => a.id === id)?.base_return || 0;
+      setImpactUI(domKey, ret[id], baseRet, c[`return_${id}`]);
+    }
   } else {
     placeholder.classList.remove('hidden');
     cardContent.classList.add('hidden');
@@ -565,14 +632,8 @@ function setImpactUI(assetKey, totalReturn, baseReturn, cardEffect) {
   if (!el || !sub) return;
 
   el.innerText = formatPercent(totalReturn);
-  if (totalReturn > 0) {
-    el.className = 'text-heading-xs text-pulse tabular font-normal';
-  } else if (totalReturn < 0) {
-    el.className = 'text-heading-xs text-loss tabular font-normal';
-  } else {
-    el.className = 'text-heading-xs text-smoke tabular font-normal';
-  }
-
+  const colorClass = totalReturn > 0 ? 'text-pulse' : (totalReturn < 0 ? 'text-loss' : 'text-smoke');
+  el.className = `text-heading-xs ${colorClass} tabular`;
   sub.innerText = `Dasar ${formatPercent(baseReturn)} · K ${formatPercent(cardEffect)}`;
 }
 
@@ -604,25 +665,32 @@ function renderRecentCards() {
   `).join('');
 }
 
+function handleTabKeydown(e, tab) {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return;
+  e.preventDefault();
+  const nextTab = (e.key === 'Home' || (e.key !== 'End' && tab !== 'top10')) ? 'top10' : 'tangguh';
+  switchLbTab(nextTab);
+  const nextEl = document.getElementById(nextTab === 'top10' ? 'btnTabTop10' : 'btnTabTangguh');
+  if (nextEl) nextEl.focus();
+}
+
 function switchLbTab(tab) {
   currentTab = tab;
   lastLeaderboardHash = '';
+  const isTop10 = tab === 'top10';
   const btn10 = document.getElementById('btnTabTop10');
   const btnT = document.getElementById('btnTabTangguh');
   const title = document.getElementById('lbTabTitle');
   const sub = document.getElementById('lbTabSub');
+  const activeCls = 'min-h-[44px] px-3 py-1 rounded-card bg-chalk text-obsidian transition-colors cursor-pointer focus-visible:relative focus-visible:z-10';
+  const idleCls = 'min-h-[44px] px-3 py-1 rounded-card text-smoke hover:text-chalk transition-colors cursor-pointer focus-visible:relative focus-visible:z-10';
 
-  if (tab === 'top10') {
-    btn10.className = 'px-2.5 py-1 rounded-card bg-chalk text-obsidian transition-colors';
-    btnT.className = 'px-2.5 py-1 rounded-card text-smoke hover:text-chalk transition-colors';
-    title.innerText = 'Papan Peringkat (Top 10)';
-    sub.innerText = 'Akumulasi total portofolio tertinggi';
-  } else {
-    btnT.className = 'px-2.5 py-1 rounded-card bg-chalk text-obsidian transition-colors';
-    btn10.className = 'px-2.5 py-1 rounded-card text-smoke hover:text-chalk transition-colors';
-    title.innerText = 'Investor Tangguh (Disiplin Risiko)';
-    sub.innerText = 'Peserta dengan toleransi drawdown terbaik';
-  }
+  btn10.className = isTop10 ? activeCls : idleCls;
+  btnT.className = isTop10 ? idleCls : activeCls;
+  btn10.setAttribute('aria-selected', isTop10 ? 'true' : 'false');
+  btnT.setAttribute('aria-selected', isTop10 ? 'false' : 'true');
+  title.innerText = isTop10 ? 'Papan Peringkat (Top 10)' : 'Investor Tangguh (Disiplin Risiko)';
+  sub.innerText = isTop10 ? 'Akumulasi total portofolio tertinggi' : 'Peserta dengan toleransi drawdown terbaik';
   renderLeaderboard();
 }
 
@@ -632,12 +700,10 @@ function renderLeaderboard() {
 
   let list = currentTab === 'top10' ? (gameState.leaderboard_top10 || []) : (gameState.investor_tangguh_top5 || []);
 
-  // Safe fallback: if Tangguh list is empty, fallback to top10 rather than an empty void
   if (currentTab === 'tangguh' && list.length === 0 && (gameState.leaderboard_top10 || []).length > 0) {
     list = gameState.leaderboard_top10;
   }
 
-  // Synthesize rows from participants_sync if leaderboard array is missing but participants exist
   if (list.length === 0 && gameState.participants_sync && Object.keys(gameState.participants_sync).length > 0) {
     const initial = (gameState.config && gameState.config.initial_capital) || 100000000;
     list = Object.values(gameState.participants_sync).map((p, idx) => ({
@@ -671,11 +737,10 @@ function renderLeaderboard() {
     if (!p) return '';
     const rankNum = idx + 1;
 
-    // Rank delta indicator with null safety
     const prevRank = p.prev_rank != null ? p.prev_rank : rankNum;
     const currRank = p.current_rank != null ? p.current_rank : rankNum;
     const delta = prevRank - currRank;
-    let deltaHtml = '<span class="rank-same">–</span>';
+    let deltaHtml = '<span class="rank-same" aria-label="Tidak berubah">–</span>';
     if (delta > 0) {
       deltaHtml = `<span class="rank-up font-mono">↑${delta}</span>`;
     } else if (delta < 0) {
@@ -695,7 +760,7 @@ function renderLeaderboard() {
         <td class="py-2.5 px-1 text-center font-mono text-ash">${rankNum}</td>
         <td class="py-2.5 px-1 text-center">${deltaHtml}</td>
         <td class="py-2.5 px-2">
-          <div class="text-chalk truncate max-w-[150px] sm:max-w-none font-medium">${escapeHtml(p.name || 'Peserta')}</div>
+          <div class="text-chalk truncate max-w-[150px] sm:max-w-none">${escapeHtml(p.name || 'Peserta')}</div>
         </td>
         <td class="py-2.5 px-2 text-right font-mono text-chalk">${formatRupiah(currentVal)}</td>
         <td class="py-2.5 px-1 text-right font-mono ${returnColor}">${returnSign}</td>
@@ -710,6 +775,18 @@ function updateCharts() {
 
   const currentRound = gameState.current_round || 0;
   const top5 = (gameState.leaderboard_top10 || []).slice(0, 5);
+  const emptyOverlay = document.getElementById('chartTopEmpty');
+  if (emptyOverlay) {
+    if (currentRound > 0 && top5.length > 0) {
+      emptyOverlay.classList.add('hidden');
+    } else {
+      emptyOverlay.classList.remove('hidden');
+      emptyOverlay.innerText = top5.length === 0
+        ? 'Menunggu peserta mendaftar...'
+        : 'Menunggu putaran pertama dimulai...';
+    }
+  }
+
   const chartsHash = `${gameState.session_id}:${currentRound}:${top5.map(p => `${p.code || p.name}:${Math.round(p.current_value || 0)}`).join('|')}`;
   if (chartsHash === lastChartsHash) return;
   lastChartsHash = chartsHash;
@@ -735,113 +812,109 @@ function updateCharts() {
   chartTopPlayers.data.datasets = playerDatasets;
   chartTopPlayers.update('none');
 
-  // Asset Benchmark Indexes
   chartAssetIndexes.data.labels = labels;
   if (gameState.asset_history) {
-    chartAssetIndexes.data.datasets[0].data = gameState.asset_history.sukuk;
-    chartAssetIndexes.data.datasets[1].data = gameState.asset_history.saham;
-    chartAssetIndexes.data.datasets[2].data = gameState.asset_history.rdpu;
-    chartAssetIndexes.data.datasets[3].data = gameState.asset_history.emas;
-    chartAssetIndexes.data.datasets[4].data = gameState.asset_history.campuran;
+    ASSET_META.forEach(([id], idx) => {
+      chartAssetIndexes.data.datasets[idx].data = gameState.asset_history[id];
+    });
   }
   chartAssetIndexes.update('none');
 }
 
 let drawCooldown = false;
 
-async function drawCard() {
-  const btn = document.getElementById('btnDrawCard');
-  if (drawCooldown || actionInFlight) return;
-  if (btn) {
-    btn.blur();
-    btn.disabled = true;
-  }
-  drawCooldown = true;
+async function postFacilitatorAction(url, payload, fallbackError, { delayUnlockMs = 0 } = {}) {
   actionInFlight = true;
-
+  setActionButtonsDisabled(true);
+  let delayedUnlock = false;
   try {
-    const res = await fetch('/api/facilitator/draw-card', {
+    const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Admin-Token': getAdminToken()
       },
-      body: JSON.stringify({ client_sync: buildClientSync() })
+      body: JSON.stringify(payload)
     });
     const json = await res.json();
-    if (json.success) {
-      applyIncomingState(json.state, true);
-      broadcastLivePush('CARD_DRAWN', {
-        round: gameState.current_round,
-        stage: gameState.current_stage,
-        card: gameState.last_drawn_card ? gameState.last_drawn_card.card : null,
-        returns: gameState.last_drawn_card ? gameState.last_drawn_card.returns : null,
-        message: gameState.message
-      });
-      if (gameState.last_drawn_card && gameState.last_drawn_card.card) {
-        showToast(`Kartu Putaran ${gameState.current_round} terbuka: ${gameState.last_drawn_card.card.title}`, 'success');
-      }
-    } else {
-      if (res.status === 403) {
-        showToast('Sesi fasilitator berakhir', 'error');
-        window.location.href = 'admin-login.html';
-        return;
-      }
-      showToast(json.error || 'Gagal mengocok kartu', 'error');
+    if (res.ok && json.success) {
+      return json;
     }
+    if (res.status === 403) {
+      showToast('Sesi fasilitator berakhir', 'error');
+      window.location.href = 'admin-login.html';
+      return null;
+    }
+    showToast(json.error || fallbackError, 'error');
+    return null;
   } catch (err) {
     showToast('Koneksi server gagal: ' + err.message, 'error');
+    return null;
   } finally {
     actionInFlight = false;
-    setTimeout(() => {
-      drawCooldown = false;
-      if (btn && (!gameState || gameState.current_round < gameState.total_rounds)) {
-        btn.disabled = false;
-      }
-    }, 250);
+    if (delayUnlockMs > 0) {
+      delayedUnlock = true;
+      setTimeout(() => {
+        drawCooldown = false;
+        setActionButtonsDisabled(false);
+      }, delayUnlockMs);
+    }
+    if (!delayedUnlock) {
+      setActionButtonsDisabled(false);
+    }
+  }
+}
+
+async function drawCard() {
+  if (drawCooldown || actionInFlight) return;
+  drawCooldown = true;
+
+  const json = await postFacilitatorAction(
+    '/api/facilitator/draw-card',
+    { client_sync: buildClientSync() },
+    'Gagal mengocok kartu',
+    { delayUnlockMs: 250 }
+  );
+  if (!json) return;
+
+  applyIncomingState(json.state, true);
+  broadcastLivePush('CARD_DRAWN', {
+    round: gameState.current_round,
+    stage: gameState.current_stage,
+    card: gameState.last_drawn_card ? gameState.last_drawn_card.card : null,
+    returns: gameState.last_drawn_card ? gameState.last_drawn_card.returns : null,
+    message: gameState.message
+  });
+  if (gameState.last_drawn_card && gameState.last_drawn_card.card) {
+    showToast(`Kartu Putaran ${gameState.current_round} terbuka: ${gameState.last_drawn_card.card.title}`, 'success');
   }
 }
 
 async function toggleStageInput() {
-  actionInFlight = true;
+  if (actionInFlight) return;
   const targetOpen = gameState ? !gameState.stage_input_open : false;
-  try {
-    const res = await fetch('/api/facilitator/toggle-input', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Admin-Token': getAdminToken()
-      },
-      body: JSON.stringify({
-        open: targetOpen,
-        client_sync: buildClientSync()
-      })
-    });
-    const json = await res.json();
-    if (json.success) {
-      if (json.state) {
-        applyIncomingState(json.state, true);
-      } else {
-        await fetchState();
-      }
-      broadcastLivePush('STAGE_INPUT_TOGGLED', {
-        stage_input_open: gameState.stage_input_open,
-        current_stage: gameState.current_stage,
-        message: gameState.message
-      });
-      showToast(`Status alokasi: ${gameState && gameState.stage_input_open ? 'Terbuka' : 'Ditutup'}`, 'info');
-    } else if (res.status === 403) {
-      showToast('Sesi berakhir', 'error');
-      window.location.href = 'admin-login.html';
-    }
-  } catch (err) {
-    showToast('Gagal mengubah status alokasi: ' + err.message, 'error');
-  } finally {
-    actionInFlight = false;
+  const json = await postFacilitatorAction(
+    '/api/facilitator/toggle-input',
+    { open: targetOpen, client_sync: buildClientSync() },
+    'Gagal mengubah status alokasi'
+  );
+  if (!json) return;
+
+  if (json.state) {
+    applyIncomingState(json.state, true);
+  } else {
+    await fetchState();
   }
+  broadcastLivePush('STAGE_INPUT_TOGGLED', {
+    stage_input_open: gameState.stage_input_open,
+    current_stage: gameState.current_stage,
+    message: gameState.message
+  });
+  showToast(`Status alokasi: ${gameState && gameState.stage_input_open ? 'Terbuka' : 'Ditutup'}`, 'info');
 }
 
 async function advanceStage() {
+  if (actionInFlight) return;
   const nextStage = (gameState?.current_stage || 1) + 1;
   const res = await showConfirmDialog({
     meta: 'Tahap Simulasi',
@@ -851,62 +924,50 @@ async function advanceStage() {
   });
   if (!res.confirmed) return;
 
-  actionInFlight = true;
-  try {
-    const res = await fetch('/api/facilitator/next-stage', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Admin-Token': getAdminToken()
-      },
-      body: JSON.stringify({ client_sync: buildClientSync() })
-    });
-    const json = await res.json();
-    if (json.success) {
-      applyIncomingState(json.state, true);
-      broadcastLivePush('STAGE_ADVANCED', {
-        current_stage: gameState.current_stage,
-        stage_input_open: gameState.stage_input_open,
-        message: gameState.message
-      });
-      showToast(`Berhasil maju ke Tahap ${gameState.current_stage}`, 'success');
-    } else {
-      if (res.status === 403) {
-        window.location.href = 'admin-login.html';
-        return;
-      }
-      showToast(json.error || 'Gagal memajukan tahap', 'error');
-    }
-  } catch (err) {
-    showToast('Koneksi server gagal: ' + err.message, 'error');
-  } finally {
-    actionInFlight = false;
-  }
+  const json = await postFacilitatorAction(
+    '/api/facilitator/next-stage',
+    { client_sync: buildClientSync() },
+    'Gagal memajukan tahap'
+  );
+  if (!json) return;
+
+  applyIncomingState(json.state, true);
+  broadcastLivePush('STAGE_ADVANCED', {
+    current_stage: gameState.current_stage,
+    stage_input_open: gameState.stage_input_open,
+    message: gameState.message
+  });
+  showToast(`Berhasil maju ke Tahap ${gameState.current_stage}`, 'success');
 }
 
 function updateModeButtonsUI(totalStages) {
   const currentStage = gameState ? gameState.current_stage : 1;
+  const actionBusy = actionInFlight || drawCooldown;
   [1, 2, 3].forEach(m => {
     const btn = document.getElementById(`btnMode${m}`);
     if (!btn) return;
     const isLocked = m < currentStage;
     if (isLocked) {
       btn.disabled = true;
-      btn.className = 'px-2.5 sm:px-3.5 h-full flex items-center justify-center cursor-not-allowed opacity-30 bg-obsidian text-smoke text-xs sm:text-caption';
+      btn.setAttribute('aria-pressed', 'false');
+      btn.className = 'min-h-[44px] px-2.5 sm:px-3.5 flex items-center justify-center cursor-not-allowed opacity-40 bg-obsidian text-smoke text-xs sm:text-caption first:rounded-l-[7px] last:rounded-r-[7px] focus-visible:relative focus-visible:z-10';
       btn.title = `Tahap ${m} sudah terlewati`;
     } else if (m === totalStages) {
-      btn.disabled = false;
-      btn.className = 'px-2.5 sm:px-3.5 h-full flex items-center justify-center transition-all cursor-pointer bg-chalk text-obsidian font-semibold text-xs sm:text-caption shadow-sm';
+      btn.disabled = actionBusy;
+      btn.setAttribute('aria-pressed', 'true');
+      btn.className = 'min-h-[44px] px-2.5 sm:px-3.5 flex items-center justify-center transition-colors cursor-pointer bg-chalk text-obsidian text-xs sm:text-caption first:rounded-l-[7px] last:rounded-r-[7px] focus-visible:relative focus-visible:z-10';
       btn.title = `Mode ${m} Tahap aktif`;
     } else {
-      btn.disabled = false;
-      btn.className = 'px-2.5 sm:px-3.5 h-full flex items-center justify-center transition-all cursor-pointer bg-obsidian text-smoke hover:text-chalk hover:bg-carbon text-xs sm:text-caption';
+      btn.disabled = actionBusy;
+      btn.setAttribute('aria-pressed', 'false');
+      btn.className = 'min-h-[44px] px-2.5 sm:px-3.5 flex items-center justify-center transition-colors cursor-pointer bg-obsidian text-smoke hover:text-chalk hover:bg-carbon text-xs sm:text-caption first:rounded-l-[7px] last:rounded-r-[7px] focus-visible:relative focus-visible:z-10';
       btn.title = `Ubah ke Mode ${m} Tahap`;
     }
   });
 }
 
 async function setGameMode(stages) {
+  if (actionInFlight) return;
   stages = parseInt(stages, 10);
   if (![1, 2, 3].includes(stages)) return;
 
@@ -917,104 +978,88 @@ async function setGameMode(stages) {
 
   const targetRounds = stages * (gameState?.rounds_per_stage || 10);
   if (gameState && gameState.current_round > 0 && gameState.current_round >= targetRounds) {
-    const ok = confirm(`Putaran saat ini (${gameState.current_round}) melebihi batas ${stages} Tahap (${targetRounds} Putaran).\n\nMengubah mode sekarang akan langsung menyelesaikan simulasi. Lanjutkan?`);
-    if (!ok) return;
-  }
-
-  const syncPayload = buildClientSync();
-  actionInFlight = true;
-
-  // Instant visual feedback on click
-  updateModeButtonsUI(stages);
-  if (gameState) {
-    gameState.total_stages = stages;
-    gameState.total_rounds = targetRounds;
-    if (gameState.current_round >= targetRounds) {
-      gameState.status = 'GAME_FINISHED';
-    }
-    renderUI();
-  }
-
-  try {
-    const res = await fetch('/api/facilitator/set-mode', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Admin-Token': getAdminToken()
-      },
-      body: JSON.stringify({
-        total_stages: stages,
-        client_sync: syncPayload
-      })
+    const confirmRes = await showConfirmDialog({
+      meta: 'Mode Durasi',
+      title: `Selesaikan Simulasi di ${stages} Tahap`,
+      message: `Putaran saat ini (${gameState.current_round}) mencapai batas ${stages} Tahap (${targetRounds} Putaran). Mengubah mode sekarang akan langsung menyelesaikan simulasi.`,
+      okText: 'Ubah & Selesaikan'
     });
-    const json = await res.json();
-    if (json.success) {
-      applyIncomingState(json.state, true);
-      broadcastLivePush('MODE_CHANGED', {
-        total_stages: gameState.total_stages,
-        total_rounds: gameState.total_rounds,
-        status: gameState.status,
-        message: gameState.message
-      });
-      showToast(`Mode diubah: ${stages} Tahap (${targetRounds} Putaran)`, 'success');
-    } else {
-      if (res.status === 403) {
-        window.location.href = 'admin-login.html';
-        return;
-      }
-      showToast(json.error || 'Gagal mengubah mode tahap', 'error');
-    }
-  } catch (err) {
-    showToast('Koneksi server gagal: ' + err.message, 'error');
-  } finally {
-    actionInFlight = false;
+    if (!confirmRes.confirmed) return;
   }
+
+  const json = await postFacilitatorAction(
+    '/api/facilitator/set-mode',
+    { total_stages: stages, client_sync: buildClientSync() },
+    'Gagal mengubah mode tahap'
+  );
+  if (!json) return;
+
+  applyIncomingState(json.state, true);
+  broadcastLivePush('MODE_CHANGED', {
+    total_stages: gameState.total_stages,
+    total_rounds: gameState.total_rounds,
+    status: gameState.status,
+    message: gameState.message
+  });
+  showToast(`Mode diubah: ${stages} Tahap (${targetRounds} Putaran)`, 'success');
 }
 
 async function seedMockUsers(count = 200) {
+  if (actionInFlight) return;
   const res = await showConfirmDialog({
     meta: 'Simulasi Beban',
-    title: `Injeksi ${count} Bot Peserta`,
-    message: `Sistem akan menambahkan ${count} portofolio simulasi bot dengan alokasi otomatis untuk menguji papan peringkat dan tolok ukur. Lanjutkan?`,
-    okText: 'Mulai Injeksi'
+    title: `Simulasi ${count} Bot Peserta`,
+    message: `Sistem akan mengganti daftar peserta saat ini dengan ${count} portofolio simulasi bot untuk menguji papan peringkat dan tolok ukur. Lanjutkan?`,
+    okText: 'Mulai Simulasi'
   });
   if (!res.confirmed) return;
 
-  actionInFlight = true;
+  const json = await postFacilitatorAction(
+    '/api/facilitator/seed-mock-users',
+    { count, client_sync: buildClientSync() },
+    'Gagal membuat bot peserta'
+  );
+  if (!json) return;
+
+  lastLeaderboardHash = '';
+  lastChartsHash = '';
+  applyIncomingState(json.state, true);
+  broadcastLivePush('USERS_SEEDED', {});
+  showToast(`Berhasil membuat ${count} bot peserta`, 'success');
+}
+
+async function exportCSV() {
   try {
-    const res = await fetch('/api/facilitator/seed-mock-users', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Admin-Token': getAdminToken()
-      },
-      body: JSON.stringify({
-        count: count,
-        client_sync: buildClientSync()
-      })
+    const res = await fetch('/api/export', {
+      headers: { 'X-Admin-Token': getAdminToken() }
     });
-    const json = await res.json();
-    if (json.success) {
-      lastLeaderboardHash = '';
-      lastChartsHash = '';
-      applyIncomingState(json.state, true);
-      broadcastLivePush('USERS_SEEDED', {});
-      showToast(`Berhasil menambahkan ${count} bot peserta`, 'success');
-    } else {
-      showToast(json.error || 'Gagal membuat bot peserta', 'error');
+    if (!res.ok) {
+      if (res.status === 403) {
+        showToast('Sesi fasilitator berakhir', 'error');
+        window.location.href = 'admin-login.html';
+        return;
+      }
+      const errJson = await res.json().catch(() => ({}));
+      showToast(errJson.error || 'Gagal mengunduh CSV', 'error');
+      return;
     }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'danarakca_leaderboard.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showToast('Rekap CSV berhasil diunduh', 'success');
   } catch (err) {
-    showToast('Gagal: ' + err.message, 'error');
-  } finally {
-    actionInFlight = false;
+    showToast('Gagal mengunduh CSV: ' + err.message, 'error');
   }
 }
 
-function exportCSV() {
-  window.open('/api/export', '_blank');
-}
-
 async function confirmReset() {
+  if (actionInFlight) return;
   const res = await showConfirmDialog({
     meta: 'Tindakan Kritis',
     title: 'Inisialisasi Ulang Simulasi (Reset Game)',
@@ -1027,72 +1072,90 @@ async function confirmReset() {
   if (!res.confirmed) return;
   const preserve = res.checkbox;
 
-  actionInFlight = true;
-  try {
-    const res = await fetch('/api/facilitator/reset', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Admin-Token': getAdminToken()
-      },
-      body: JSON.stringify({
-        preserve_participants: preserve,
-        total_stages: gameState ? gameState.total_stages : 3,
-        client_sync: buildClientSync()
-      })
-    });
-    const json = await res.json();
-    if (json.success) {
-      lastRecentCardsHash = '';
-      lastLeaderboardHash = '';
-      lastChartsHash = '';
-      applyIncomingState(json.state, true);
-      broadcastLivePush('GAME_RESET', {
-        session_id: gameState ? gameState.session_id : 1,
-        status: gameState ? gameState.status : 'WAITING_STAGE_1',
-        current_round: 0,
-        current_stage: 1,
-        stage_input_open: true,
-        message: gameState ? gameState.message : ''
-      });
-      showToast('Permainan berhasil direset ke Kuartal 0', 'success');
-    } else {
-      showToast('Gagal reset: ' + (json.error || 'Terjadi kesalahan'), 'error');
-    }
-  } catch (err) {
-    showToast('Gagal: ' + err.message, 'error');
-  } finally {
-    actionInFlight = false;
-  }
+  const json = await postFacilitatorAction(
+    '/api/facilitator/reset',
+    {
+      preserve_participants: preserve,
+      total_stages: gameState ? gameState.total_stages : 3,
+      client_sync: buildClientSync()
+    },
+    'Gagal me-reset permainan'
+  );
+  if (!json) return;
+
+  lastRecentCardsHash = '';
+  lastLeaderboardHash = '';
+  lastChartsHash = '';
+  applyIncomingState(json.state, true);
+  broadcastLivePush('GAME_RESET', {});
+  showToast(preserve ? 'Game di-reset (Peserta dipertahankan)' : 'Game di-reset total', 'info');
 }
 
-function getPlayerUrl() {
-  const saved = localStorage.getItem('danarakca_player_url');
-  if (saved && saved.trim()) return saved.trim();
-  if (gameState && gameState.config && gameState.config.public_url && gameState.config.public_url.trim()) {
-    const pub = gameState.config.public_url.trim().replace(/\/+$/, '');
-    return pub + '/player.html';
-  }
+function getDefaultPlayerUrl() {
+  const pub = gameState?.config?.public_url?.trim();
+  if (pub) return pub.replace(/\/+$/, '') + '/player.html';
   return window.location.origin + '/player.html';
 }
 
+function getPlayerUrl() {
+  return localStorage.getItem('danarakca_player_url')?.trim() || getDefaultPlayerUrl();
+}
+
 function updateQRCodeImage(url) {
-  const img = document.getElementById('qrImage');
-  if (img) {
-    img.src = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(url)}`;
+  const container = document.getElementById('qrCodeContainer');
+  if (!container) return;
+  if (cachedQrUrl === url && cachedQrHtml) {
+    container.innerHTML = cachedQrHtml;
+    return;
+  }
+  const renderFallback = () => {
+    container.textContent = '';
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.className = 'text-obsidian underline text-xs font-mono';
+    link.textContent = 'Buka Tautan Peserta';
+    container.appendChild(link);
+  };
+  try {
+    if (typeof qrcode === 'function') {
+      const qr = qrcode(0, 'M');
+      qr.addData(url);
+      qr.make();
+      cachedQrHtml = qr.createImgTag(5, 8);
+      cachedQrUrl = url;
+      container.innerHTML = cachedQrHtml;
+    } else {
+      renderFallback();
+    }
+  } catch (err) {
+    renderFallback();
   }
 }
 
 function showQRModal() {
+  lastModalTrigger = document.activeElement;
   const url = getPlayerUrl();
   const input = document.getElementById('inputPlayerUrl');
   if (input) input.value = url;
   updateQRCodeImage(url);
-  document.getElementById('modalQR').classList.remove('hidden');
+  const modal = document.getElementById('modalQR');
+  if (modal) {
+    modal.classList.remove('hidden');
+    const closeBtn = document.getElementById('btnCloseQRModal');
+    if (closeBtn) closeBtn.focus();
+  }
 }
 
 function hideQRModal() {
-  document.getElementById('modalQR').classList.add('hidden');
+  const modal = document.getElementById('modalQR');
+  if (!modal || modal.classList.contains('hidden')) return;
+  modal.classList.add('hidden');
+  if (lastModalTrigger && typeof lastModalTrigger.focus === 'function') {
+    lastModalTrigger.focus();
+    lastModalTrigger = null;
+  }
 }
 
 function onPlayerUrlChange() {
@@ -1122,10 +1185,7 @@ function copyPlayerUrl() {
 
 function resetPlayerUrlDefault() {
   localStorage.removeItem('danarakca_player_url');
-  let defaultUrl = window.location.origin + '/player.html';
-  if (gameState && gameState.config && gameState.config.public_url && gameState.config.public_url.trim()) {
-    defaultUrl = gameState.config.public_url.trim().replace(/\/+$/, '') + '/player.html';
-  }
+  const defaultUrl = getDefaultPlayerUrl();
   const input = document.getElementById('inputPlayerUrl');
   if (input) input.value = defaultUrl;
   updateQRCodeImage(defaultUrl);
@@ -1147,28 +1207,73 @@ function scheduleFacilitatorPoll() {
   }, baseInterval + jitter);
 }
 
+function trapModalFocus(modal, e) {
+  const focusables = Array.from(
+    modal.querySelectorAll('button:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')
+  ).filter(el => el.offsetParent !== null);
+  if (focusables.length === 0) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
-  const isAuthed = await verifyAdminAuth();
-  if (!isAuthed) return;
-
-  initCharts();
-  initFacilitatorRealtimeStream();
-  await fetchState();
-
-  // Dynamic jittered polling fallback
-  scheduleFacilitatorPoll();
-
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
+      if (!facilitatorInitialized) {
+        retryFacilitatorInit();
+        return;
+      }
       fetchState();
       scheduleFacilitatorPoll();
     }
   });
 
-  // Operator ergonomics: Escape closes modal
   document.addEventListener('keydown', (e) => {
+    const confirmModal = document.getElementById('modalConfirm');
+    const qrModal = document.getElementById('modalQR');
+    if (e.key === 'Tab') {
+      if (confirmModal && !confirmModal.classList.contains('hidden')) {
+        trapModalFocus(confirmModal, e);
+      } else if (qrModal && !qrModal.classList.contains('hidden')) {
+        trapModalFocus(qrModal, e);
+      }
+      return;
+    }
     if (e.key === 'Escape') {
+      if (confirmModal && !confirmModal.classList.contains('hidden')) {
+        closeConfirmModal(false);
+        return;
+      }
       hideQRModal();
     }
   });
+
+  document.addEventListener('click', (e) => {
+    const qrModal = document.getElementById('modalQR');
+    if (qrModal && e.target === qrModal) {
+      hideQRModal();
+      return;
+    }
+    const confirmModal = document.getElementById('modalConfirm');
+    if (confirmModal && e.target === confirmModal) {
+      closeConfirmModal(false);
+    }
+  });
+
+  const isAuthed = await verifyAdminAuth();
+  if (!isAuthed) return;
+
+  facilitatorInitialized = true;
+  initCharts();
+  initFacilitatorRealtimeStream();
+  await fetchState();
+
+  scheduleFacilitatorPoll();
 });

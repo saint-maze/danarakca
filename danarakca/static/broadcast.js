@@ -1,4 +1,4 @@
-// Danarakca — Public Broadcast & Presentation Screen Logic
+// Danarakca Public Broadcast & Presentation Screen Logic
 // Hyperstudio Dark Editorial Edition
 
 const LIVE_CHANNEL = 'danarakca_live_fafc19b30c66';
@@ -6,7 +6,7 @@ let broadcastEventSource = null;
 let sseActive = false;
 let sseErrors = 0;
 let gameState = null;
-let currentTab = 'top10'; // 'top10' or 'tangguh'
+let currentTab = 'top10';
 let chartTopPlayers = null;
 let chartAssetIndexes = null;
 let broadcastPollTimeout = null;
@@ -16,6 +16,15 @@ let lastLeaderboardHash = '';
 let lastChartsHash = '';
 let cachedQrUrl = null;
 let cachedQrHtml = null;
+let lastQrTrigger = null;
+
+const ASSET_META = [
+  ['sukuk', 'Sukuk'],
+  ['saham', 'Saham'],
+  ['rdpu', 'Rdpu'],
+  ['emas', 'Emas'],
+  ['campuran', 'Campuran']
+];
 
 function setElementText(id, val) {
   const el = document.getElementById(id);
@@ -31,6 +40,18 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function setBroadcastError(msg) {
+  const banner = document.getElementById('broadcastSyncError');
+  const text = document.getElementById('broadcastSyncErrorText');
+  if (!banner) return;
+  if (msg) {
+    if (text) text.innerText = msg;
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
 }
 
 // Currency & Percentage Formatters
@@ -52,8 +73,19 @@ function formatPercent(num, withSign = true) {
   return pct + '%';
 }
 
-// Chart.js Initialization (Optimized for Projector Contrast and Distance)
+// Chart.js Initialization
 function initCharts() {
+  if (typeof Chart !== 'function') {
+    const topEmpty = document.getElementById('chartTopEmpty');
+    if (topEmpty) {
+      topEmpty.classList.remove('hidden');
+      topEmpty.innerText = 'Grafik tidak tersedia (pustaka grafik gagal dimuat).';
+    }
+    const assetEmpty = document.getElementById('chartAssetEmpty');
+    if (assetEmpty) assetEmpty.classList.remove('hidden');
+    return;
+  }
+
   const chartOptionsBase = {
     responsive: true,
     maintainAspectRatio: false,
@@ -63,7 +95,7 @@ function initCharts() {
         position: 'top',
         labels: {
           color: '#c1c1c1',
-          font: { family: 'Inter', size: 12, weight: '500' },
+          font: { family: 'Inter', size: 12 },
           boxWidth: 14,
           boxHeight: 14
         }
@@ -150,72 +182,17 @@ try {
   }
 } catch (e) {}
 
+// Treat external SSE events strictly as wake-up triggers to fetch authoritative server state
 function handleBroadcastLiveEvent(msg, sentAtSec) {
   if (!msg || !msg.event) return;
   if (sentAtSec && (Date.now() / 1000 - sentAtSec) > 60) return;
 
-  if (gameState) {
-    const curSess = gameState.session_id || 0;
-    const msgSess = msg.session_id || 0;
-    const curVer = gameState.state_version || 0;
-    const msgVer = msg.state_version || 0;
-    if (msg.event === 'GAME_RESET') {
-      if (msgSess && msgSess <= curSess) return;
-    } else {
-      if (msgSess && curSess && msgSess < curSess) return;
-      if (msgSess === curSess && msgVer && curVer >= msgVer) return;
-    }
-  }
-
-  if (msg.event === 'CARD_DRAWN' && gameState) {
-    const round = msg.round || msg.current_round;
-    const card = msg.card || (msg.card_entry && msg.card_entry.card);
-    const returns = msg.returns || (msg.card_entry && msg.card_entry.returns);
-    if (round && round > (gameState.current_round || 0) && card) {
-      const prevLast = gameState.last_drawn_card;
-      if (prevLast && prevLast.card) {
-        gameState.recent_cards = [prevLast, ...(gameState.recent_cards || [])].slice(0, 5);
-      }
-      gameState.current_round = round;
-      if (msg.stage) gameState.current_stage = msg.stage;
-      gameState.stage_input_open = false;
-      gameState.last_drawn_card = {
-        round: round,
-        stage: gameState.current_stage,
-        card_id: card.id,
-        card: card,
-        returns: returns || {}
-      };
-      if (Array.isArray(msg.leaderboard_top10) && msg.leaderboard_top10.length > 0) {
-        gameState.leaderboard_top10 = msg.leaderboard_top10;
-      }
-      if (Array.isArray(msg.investor_tangguh_top5) && msg.investor_tangguh_top5.length > 0) {
-        gameState.investor_tangguh_top5 = msg.investor_tangguh_top5;
-      }
-      if (msg.asset_history) {
-        gameState.asset_history = msg.asset_history;
-      }
-      renderBroadcast();
-    }
-  } else if (msg.event === 'STAGE_INPUT_TOGGLED' && gameState) {
-    gameState.stage_input_open = Boolean(msg.stage_input_open);
-    if (msg.current_stage) gameState.current_stage = msg.current_stage;
-    renderBroadcast();
-  } else if (msg.event === 'STAGE_ADVANCED' && gameState) {
-    if (msg.current_stage) gameState.current_stage = msg.current_stage;
-    gameState.stage_input_open = true;
-    renderBroadcast();
-  } else if (msg.event === 'MODE_CHANGED' && gameState) {
-    if (msg.total_stages) gameState.total_stages = msg.total_stages;
-    if (msg.total_rounds) gameState.total_rounds = msg.total_rounds;
-    renderBroadcast();
-  } else if (msg.event === 'GAME_RESET') {
+  if (msg.event === 'GAME_RESET') {
     lastRenderedCardId = null;
     lastRecentCardsHash = '';
     lastLeaderboardHash = '';
     lastChartsHash = '';
   }
-
   fetchState(true);
 }
 
@@ -232,8 +209,7 @@ function initRealtimeStream() {
     broadcastEventSource.onopen = () => {
       sseActive = true;
       sseErrors = 0;
-      const syncEl = document.getElementById('syncStatusText');
-      if (syncEl) syncEl.innerText = 'Tersinkronisasi';
+      setElementText('syncStatusText', 'Tersinkronisasi');
     };
     broadcastEventSource.onmessage = (e) => {
       try {
@@ -248,13 +224,11 @@ function initRealtimeStream() {
     broadcastEventSource.onerror = () => {
       sseErrors++;
       sseActive = false;
-      // Close immediately if closed or 403 rate-limited on public SSE
       if (broadcastEventSource && (broadcastEventSource.readyState === EventSource.CLOSED || sseErrors >= 2)) {
         try { broadcastEventSource.close(); } catch (e) {}
         broadcastEventSource = null;
       }
-      const syncEl = document.getElementById('syncStatusText');
-      if (syncEl) syncEl.innerText = 'Polling Aktif';
+      setElementText('syncStatusText', 'Polling Aktif');
     };
   } catch (err) {
     sseActive = false;
@@ -271,7 +245,7 @@ function applyIncomingState(newState, force = false) {
     const curVer = gameState.state_version || 0;
     const newVer = newState.state_version || 0;
 
-    if (newSess < curSess) return;
+    if (!force && newSess < curSess) return;
 
     if (!force && newSess === curSess) {
       const curRound = gameState.current_round || 0;
@@ -281,12 +255,10 @@ function applyIncomingState(newState, force = false) {
       const curEpoch = gameState.roster_epoch || 0;
       const newEpoch = newState.roster_epoch || 0;
 
-      // Reject stale/partial container responses that lag behind on rounds or participant count
       if (newEpoch < curEpoch) return;
       if (newEpoch === curEpoch && newRound < curRound) return;
       if (newEpoch === curEpoch && newRound === curRound && newTotalP < curTotalP) return;
 
-      // Preserve leaderboard if lagging empty response
       if ((!newState.leaderboard_top10 || newState.leaderboard_top10.length === 0) && (gameState.leaderboard_top10 && gameState.leaderboard_top10.length > 0)) {
         newState.leaderboard_top10 = gameState.leaderboard_top10;
       }
@@ -298,6 +270,8 @@ function applyIncomingState(newState, force = false) {
   }
 
   gameState = newState;
+  setBroadcastError(null);
+  setElementText('syncStatusText', sseActive ? 'Tersinkronisasi' : 'Polling Aktif');
   renderBroadcast();
 }
 
@@ -310,18 +284,19 @@ async function fetchState(bust = false) {
     const url = bust ? '/api/state?bust=1' : '/api/state';
     const res = await fetch(url, { cache: 'no-store' });
     const json = await res.json();
-    if (json.success && json.data) {
-      applyIncomingState(json.data);
+    if (res.ok && json.success && json.data) {
+      applyIncomingState(json.data, bust);
+    } else if (!res.ok) {
+      setBroadcastError(json.error || 'Gagal memuat data simulasi dari server.');
     }
   } catch (err) {
-    const syncEl = document.getElementById('syncStatusText');
-    if (syncEl) syncEl.innerText = 'Menghubungkan...';
+    setElementText('syncStatusText', 'Menghubungkan...');
+    setBroadcastError('Koneksi ke server simulasi terputus. Mencoba menyambung kembali...');
   } finally {
     fetchInFlight = false;
   }
 }
 
-// Dynamic Jittered Polling Schedule
 function scheduleBroadcastPoll() {
   if (broadcastPollTimeout) clearTimeout(broadcastPollTimeout);
   const baseInterval = sseActive ? 3500 : 1800;
@@ -342,8 +317,8 @@ function renderBroadcast() {
   const round = gameState.current_round || 0;
   const totalRounds = gameState.total_rounds || 30;
 
-  // Header Badges
   setElementText('badgeRound', `${round} / ${totalRounds}`);
+  setElementText('badgeRoundMobile', `${round}/${totalRounds}`);
 
   if (round === 0) {
     setElementText('badgeSimTime', 'Tahun 1 · Awal');
@@ -353,16 +328,24 @@ function renderBroadcast() {
     setElementText('badgeSimTime', `Tahun ${year} · Q${qtr}`);
   }
 
-  setElementText('badgeStage', `${gameState.current_stage || 1} / ${gameState.total_stages || 3}`);
-  setElementText('badgeParticipants', `${gameState.total_participants || 0}`);
+  const stageStr = `${gameState.current_stage || 1} / ${gameState.total_stages || 3}`;
+  setElementText('badgeStage', stageStr);
+  setElementText('badgeStageMobile', stageStr);
+  const partStr = `${gameState.total_participants || 0}`;
+  setElementText('badgeParticipants', partStr);
+  setElementText('badgeParticipantsMobile', partStr);
 
   const top1 = (gameState.leaderboard_top10 || [])[0];
-  setElementText('badgeHighestWealth', top1 ? formatJuta(top1.current_value) : 'Rp 100,0 Jt');
+  const peakStr = top1 ? formatJuta(top1.current_value) : 'Rp 100,0 Jt';
+  setElementText('badgeHighestWealth', peakStr);
+  setElementText('badgeHighestWealthMobile', peakStr);
 
   // Active Scenario Card
   const lastCard = gameState.last_drawn_card;
   const placeholder = document.getElementById('cardPlaceholder');
   const cardContent = document.getElementById('cardContent');
+  setElementText('cardPlaceholderTitle', 'Sesi Simulasi Siap Dimulai');
+  setElementText('cardPlaceholderDesc', 'Pendaftaran peserta dibuka. Skenario pasar kuartal pertama akan ditampilkan saat putaran dimulai.');
 
   if (lastCard && lastCard.card) {
     if (placeholder) placeholder.classList.add('hidden');
@@ -387,41 +370,28 @@ function renderBroadcast() {
     setElementText('cardNarration', c.narration);
     setElementText('cardExplanation', c.explanation);
 
-    // Allocation Input Status Badge
     const inputStatusText = document.getElementById('inputStatusText');
     const inputStatusDot = document.getElementById('inputStatusDot');
     const badgeInputStatus = document.getElementById('badgeInputStatus');
 
     if (inputStatusText && inputStatusDot && badgeInputStatus) {
-      if (gameState.stage_input_open) {
-        if (inputStatusText.innerText !== 'Alokasi Terbuka') {
-          inputStatusText.innerText = 'Alokasi Terbuka';
-          inputStatusDot.className = 'w-1.5 h-1.5 rounded-full bg-pulse animate-pulse';
-          badgeInputStatus.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-tag font-mono text-xs font-semibold bg-pulse/10 border border-pulse/30 text-pulse';
-        }
-      } else {
-        if (inputStatusText.innerText !== 'Alokasi Ditutup') {
-          inputStatusText.innerText = 'Alokasi Ditutup';
-          inputStatusDot.className = 'w-1.5 h-1.5 rounded-full bg-smoke';
-          badgeInputStatus.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-tag font-mono text-xs font-semibold bg-obsidian hairline text-smoke';
-        }
+      const isOpen = Boolean(gameState.stage_input_open);
+      const targetText = isOpen ? 'Alokasi Terbuka' : 'Alokasi Ditutup';
+      if (inputStatusText.innerText !== targetText) {
+        inputStatusText.innerText = targetText;
+        inputStatusDot.className = `w-1.5 h-1.5 rounded-full ${isOpen ? 'bg-pulse' : 'bg-smoke'}`;
+        badgeInputStatus.className = isOpen
+          ? 'inline-flex items-center gap-1.5 px-3 py-1 rounded-tag font-mono text-xs bg-pulse/10 border border-pulse/30 text-pulse'
+          : 'inline-flex items-center gap-1.5 px-3 py-1 rounded-tag font-mono text-xs bg-obsidian hairline text-smoke';
       }
     }
 
-    // Impact Matrix
     const ret = lastCard.returns || {};
     const assets = (gameState.config && gameState.config.assets) || [];
-    const baseSukuk = assets.find(a => a.id === 'sukuk')?.base_return || 0;
-    const baseSaham = assets.find(a => a.id === 'saham')?.base_return || 0;
-    const baseRdpu = assets.find(a => a.id === 'rdpu')?.base_return || 0;
-    const baseEmas = assets.find(a => a.id === 'emas')?.base_return || 0;
-    const baseCampuran = assets.find(a => a.id === 'campuran')?.base_return || 0;
-
-    setImpactUI('Sukuk', ret.sukuk, baseSukuk, c.return_sukuk);
-    setImpactUI('Saham', ret.saham, baseSaham, c.return_saham);
-    setImpactUI('Rdpu', ret.rdpu, baseRdpu, c.return_rdpu);
-    setImpactUI('Emas', ret.emas, baseEmas, c.return_emas);
-    setImpactUI('Campuran', ret.campuran, baseCampuran, c.return_campuran);
+    for (const [id, domKey] of ASSET_META) {
+      const baseRet = assets.find(a => a.id === id)?.base_return || 0;
+      setImpactUI(domKey, ret[id], baseRet, c[`return_${id}`]);
+    }
   } else {
     if (placeholder) placeholder.classList.remove('hidden');
     if (cardContent) {
@@ -441,14 +411,8 @@ function setImpactUI(assetKey, totalReturn, baseReturn, cardEffect) {
   if (!el || !sub) return;
 
   el.innerText = formatPercent(totalReturn);
-  if (totalReturn > 0) {
-    el.className = 'text-heading-xs tabular font-mono font-semibold text-pulse';
-  } else if (totalReturn < 0) {
-    el.className = 'text-heading-xs tabular font-mono font-semibold text-loss';
-  } else {
-    el.className = 'text-heading-xs tabular font-mono font-semibold text-ash';
-  }
-
+  const colorClass = totalReturn > 0 ? 'text-pulse' : (totalReturn < 0 ? 'text-loss' : 'text-ash');
+  el.className = `text-heading-xs tabular font-mono ${colorClass}`;
   sub.innerText = `Dasar ${formatPercent(baseReturn)} · Efek ${formatPercent(cardEffect)}`;
 }
 
@@ -462,7 +426,7 @@ function renderRecentCards() {
   lastRecentCardsHash = hash;
 
   if (recent.length === 0) {
-    container.innerHTML = '<div class="text-caption text-smoke italic py-1 col-span-3">Belum ada riwayat kartu sebelumnya.</div>';
+    container.innerHTML = '<div class="text-caption text-smoke italic py-1 col-span-full">Belum ada riwayat kartu sebelumnya.</div>';
     return;
   }
 
@@ -472,33 +436,44 @@ function renderRecentCards() {
         <span class="font-mono text-ash text-[10px] border border-graphite px-1.5 py-0.5 rounded-tag shrink-0">
           Q${Number(c.round) || 0}
         </span>
-        <span class="text-chalk truncate text-xs font-medium">${escapeHtml(c.card?.title)}</span>
+        <span class="text-chalk truncate text-xs">${escapeHtml(c.card?.title)}</span>
       </div>
       <span class="meta text-[10px] text-smoke shrink-0 ml-1">${escapeHtml(c.card?.category)}</span>
     </div>
   `).join('');
 }
 
+function handleTabKeydown(e, current) {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return;
+  e.preventDefault();
+  const target = (e.key === 'Home' || (e.key !== 'End' && current !== 'top10')) ? 'top10' : 'tangguh';
+  switchLbTab(target);
+  const btn = document.getElementById(target === 'top10' ? 'btnTabTop10' : 'btnTabTangguh');
+  if (btn) btn.focus();
+}
+
 function switchLbTab(tab) {
   if (currentTab === tab) return;
   currentTab = tab;
   lastLeaderboardHash = '';
+  const isTop10 = tab === 'top10';
   const btn10 = document.getElementById('btnTabTop10');
   const btnT = document.getElementById('btnTabTangguh');
   const title = document.getElementById('lbTabTitle');
   const sub = document.getElementById('lbTabSub');
+  const activeCls = 'min-h-[44px] px-3 py-1 rounded-card bg-chalk text-obsidian transition-colors cursor-pointer focus-visible:relative focus-visible:z-10';
+  const idleCls = 'min-h-[44px] px-3 py-1 rounded-card text-smoke hover:text-chalk transition-colors cursor-pointer focus-visible:relative focus-visible:z-10';
 
-  if (tab === 'top10') {
-    if (btn10) btn10.className = 'px-3 py-1 rounded-card bg-chalk text-obsidian font-semibold transition-colors';
-    if (btnT) btnT.className = 'px-3 py-1 rounded-card text-smoke hover:text-chalk transition-colors';
-    if (title) title.innerText = 'Papan Peringkat';
-    if (sub) sub.innerText = '10 Portofolio Terbesar';
-  } else {
-    if (btnT) btnT.className = 'px-3 py-1 rounded-card bg-chalk text-obsidian font-semibold transition-colors';
-    if (btn10) btn10.className = 'px-3 py-1 rounded-card text-smoke hover:text-chalk transition-colors';
-    if (title) title.innerText = 'Investor Tangguh';
-    if (sub) sub.innerText = 'Disiplin Risiko Terbaik';
+  if (btn10) {
+    btn10.className = isTop10 ? activeCls : idleCls;
+    btn10.setAttribute('aria-selected', isTop10 ? 'true' : 'false');
   }
+  if (btnT) {
+    btnT.className = isTop10 ? idleCls : activeCls;
+    btnT.setAttribute('aria-selected', isTop10 ? 'false' : 'true');
+  }
+  if (title) title.innerText = isTop10 ? 'Papan Peringkat' : 'Investor Tangguh';
+  if (sub) sub.innerText = isTop10 ? '10 Portofolio Terbesar' : 'Disiplin Risiko Terbaik';
   renderLeaderboard();
 }
 
@@ -512,7 +487,7 @@ function renderLeaderboard() {
     list = gameState.leaderboard_top10;
   }
 
-  const hash = `${currentTab}:${list.map(p => `${p.code}-${p.current_value}-${p.current_rank}-${p.max_drawdown}`).join('|')}`;
+  const hash = `${currentTab}:${gameState.session_id}:${gameState.current_round}:${list.map(p => `${p.code}-${p.current_value}-${p.current_rank}-${p.prev_rank}-${p.max_drawdown}`).join('|')}`;
   if (hash === lastLeaderboardHash) return;
   lastLeaderboardHash = hash;
 
@@ -534,7 +509,7 @@ function renderLeaderboard() {
     const prevRank = p.prev_rank != null ? p.prev_rank : rankNum;
     const currRank = p.current_rank != null ? p.current_rank : rankNum;
     const delta = prevRank - currRank;
-    let deltaHtml = '<span class="text-smoke">–</span>';
+    let deltaHtml = '<span class="text-smoke" aria-label="Tidak berubah">–</span>';
     if (delta > 0) {
       deltaHtml = `<span class="text-pulse font-mono">↑${delta}</span>`;
     } else if (delta < 0) {
@@ -551,12 +526,12 @@ function renderLeaderboard() {
 
     return `
       <tr class="hover:bg-graphite/40 transition-colors">
-        <td class="py-2.5 px-1 text-center font-mono text-ash font-medium">${rankNum}</td>
+        <td class="py-2.5 px-1 text-center font-mono text-ash">${rankNum}</td>
         <td class="py-2.5 px-1 text-center">${deltaHtml}</td>
         <td class="py-2.5 px-2">
-          <div class="text-chalk truncate max-w-[140px] sm:max-w-none font-medium">${escapeHtml(p.name || 'Peserta')}</div>
+          <div class="text-chalk truncate max-w-[140px] sm:max-w-none">${escapeHtml(p.name || 'Peserta')}</div>
         </td>
-        <td class="py-2.5 px-2 text-right font-mono text-chalk font-semibold">${formatRupiah(currentVal)}</td>
+        <td class="py-2.5 px-2 text-right font-mono text-chalk">${formatRupiah(currentVal)}</td>
         <td class="py-2.5 px-1 text-right font-mono ${returnColor}">${returnSign}</td>
         <td class="py-2.5 px-1 text-right font-mono text-smoke">${mddPct}</td>
       </tr>
@@ -569,7 +544,19 @@ function updateCharts() {
 
   const currentRound = gameState.current_round || 0;
   const top5 = (gameState.leaderboard_top10 || []).slice(0, 5);
-  const chartHash = `${currentRound}:${top5.map(p => `${p.code}-${p.current_value}`).join('|')}:${(gameState.asset_history?.sukuk || []).length}`;
+  const emptyOverlay = document.getElementById('chartTopEmpty');
+  if (emptyOverlay) {
+    if (currentRound > 0 && top5.length > 0) {
+      emptyOverlay.classList.add('hidden');
+    } else {
+      emptyOverlay.classList.remove('hidden');
+      emptyOverlay.innerText = top5.length === 0
+        ? 'Menunggu peserta mendaftar...'
+        : 'Menunggu putaran pertama dimulai...';
+    }
+  }
+
+  const chartHash = `${gameState.session_id}:${currentRound}:${top5.map(p => `${p.code}-${p.current_value}`).join('|')}:${(gameState.asset_history?.sukuk || []).length}`;
   if (chartHash === lastChartsHash) return;
   lastChartsHash = chartHash;
 
@@ -578,7 +565,6 @@ function updateCharts() {
     labels.push(`K${r}`);
   }
 
-  // Top 5 Portfolios
   const lineColors = ['#f3f3f3', '#8fb3d9', '#8fd9a8', '#d9c38f', '#b38fd9'];
 
   const playerDatasets = top5.map((p, idx) => ({
@@ -595,14 +581,11 @@ function updateCharts() {
   chartTopPlayers.data.datasets = playerDatasets;
   chartTopPlayers.update('none');
 
-  // Asset Benchmark Indexes
   chartAssetIndexes.data.labels = labels;
   if (gameState.asset_history) {
-    chartAssetIndexes.data.datasets[0].data = gameState.asset_history.sukuk || [100];
-    chartAssetIndexes.data.datasets[1].data = gameState.asset_history.saham || [100];
-    chartAssetIndexes.data.datasets[2].data = gameState.asset_history.rdpu || [100];
-    chartAssetIndexes.data.datasets[3].data = gameState.asset_history.emas || [100];
-    chartAssetIndexes.data.datasets[4].data = gameState.asset_history.campuran || [100];
+    ASSET_META.forEach(([id], idx) => {
+      chartAssetIndexes.data.datasets[idx].data = gameState.asset_history[id] || [100];
+    });
   }
   chartAssetIndexes.update('none');
 }
@@ -638,6 +621,7 @@ document.addEventListener('fullscreenchange', updateFullscreenIcon);
 
 // QR Code Modal
 function showQRModal() {
+  lastQrTrigger = document.activeElement;
   const modal = document.getElementById('qrModal');
   const container = document.getElementById('qrCodeContainer');
   const urlText = document.getElementById('qrUrlText');
@@ -681,17 +665,41 @@ function showQRModal() {
 
   modal.classList.remove('hidden');
   modal.classList.add('flex');
+  const closeBtn = document.getElementById('btnCloseQrModal');
+  if (closeBtn) closeBtn.focus();
 }
 
 function hideQRModal() {
   const modal = document.getElementById('qrModal');
-  if (!modal) return;
+  if (!modal || modal.classList.contains('hidden')) return;
   modal.classList.add('hidden');
   modal.classList.remove('flex');
+  if (lastQrTrigger && typeof lastQrTrigger.focus === 'function') {
+    lastQrTrigger.focus();
+    lastQrTrigger = null;
+  }
 }
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') hideQRModal();
+  if (e.key === 'Escape') {
+    hideQRModal();
+    return;
+  }
+  if (e.key === 'Tab') {
+    const modal = document.getElementById('qrModal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    const focusables = modal.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
 });
 
 document.addEventListener('click', (e) => {

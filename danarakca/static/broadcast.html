@@ -4,21 +4,21 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Broadcast</title>
+  <title>Broadcast - Danarakca</title>
   <link rel="icon" type="image/png" href="img/thunderbolt.png">
   <link rel="apple-touch-icon" href="img/thunderbolt.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap"
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400&family=JetBrains+Mono:wght@400&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=2.4">
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="tw-config.js"></script>
+  <script src="tw-config.js?v=2.4"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
   <style>
     .card-zoom {
-      animation: cardZoomIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      animation: cardZoomIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
     @keyframes cardZoomIn {
       0% { opacity: 0; transform: scale(0.985); }
@@ -27,24 +27,20 @@
   </style>
 </head>
 
-<body class="bg-obsidian text-chalk min-h-screen flex flex-col justify-between relative overflow-x-hidden select-none">
+<body class="bg-obsidian text-chalk min-h-screen flex flex-col justify-between relative overflow-x-hidden">
 
-  <!-- Static Background Gradient (Optimized for Projectors, No Heavy GPU Composite Loops) -->
-  <div class="fixed inset-0 bg-gradient-to-b from-obsidian via-carbon to-obsidian pointer-events-none" aria-hidden="true"></div>
-
-  <!-- Broadcast Header -->
-  <header class="hairline-b bg-obsidian/95 backdrop-blur-md sticky top-0 z-40">
-    <div class="w-full max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-3">
+  <header class="hairline-b bg-obsidian relative z-40">
+    <div class="w-full max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 py-2.5 sm:py-3 flex flex-wrap items-center justify-between gap-2 sm:gap-3">
 
       <!-- Left: Brand -->
       <div class="flex items-center gap-3 shrink-0">
-        <a href="index.html" class="flex items-center gap-3 group text-decoration-none">
-          <img src="img/logo-danarakca.png" alt="Logo Danarakca" class="h-9 sm:h-11 w-auto object-contain shrink-0 drop-shadow-md">
+        <a href="index.html" class="flex items-center gap-3 group no-underline min-h-[44px]">
+          <img src="img/logo-danarakca.png" alt="Logo Danarakca" class="h-9 sm:h-11 w-auto object-contain shrink-0">
           <div>
-            <span class="text-heading-xs tracking-tight text-chalk font-semibold block leading-tight">
+            <h1 class="text-heading-xs tracking-tight text-chalk block leading-tight">
               Danarakca
-            </span>
-            <span class="text-caption text-smoke block text-[11px] leading-tight mt-0.5 font-mono">
+            </h1>
+            <span class="text-smoke block text-[11px] leading-tight mt-0.5 font-mono">
               DJPPR · Kementerian Keuangan RI
             </span>
           </div>
@@ -54,51 +50,46 @@
       <!-- Center / Right: Session Metrics -->
       <div class="flex items-center gap-2 sm:gap-2.5 shrink-0">
 
-        <div class="hidden md:flex items-center divide-x divide-graphite rounded-button hairline overflow-hidden bg-carbon font-mono text-center shrink-0">
-          <!-- Putaran -->
+        <div class="hidden md:flex items-center divide-x divide-graphite rounded-card hairline overflow-hidden bg-carbon font-mono text-center shrink-0">
           <div class="px-2.5 lg:px-3 py-1 flex flex-col items-center justify-center">
             <span class="text-[10px] uppercase tracking-wider text-smoke font-sans">Putaran</span>
-            <span class="text-xs sm:text-sm font-semibold text-white tabular whitespace-nowrap" id="badgeRound">0 / 30</span>
+            <span class="text-xs sm:text-sm text-white tabular whitespace-nowrap" id="badgeRound">--</span>
           </div>
 
-          <!-- Waktu -->
           <div class="px-2.5 lg:px-3 py-1 flex flex-col items-center justify-center">
             <span class="text-[10px] uppercase tracking-wider text-smoke font-sans">Waktu</span>
-            <span class="text-xs sm:text-sm font-semibold text-white tabular whitespace-nowrap" id="badgeSimTime">Tahun 1 · Awal</span>
+            <span class="text-xs sm:text-sm text-white tabular whitespace-nowrap" id="badgeSimTime">Memuat...</span>
           </div>
 
-          <!-- Tahap -->
           <div class="px-2.5 lg:px-3 py-1 flex flex-col items-center justify-center">
             <span class="text-[10px] uppercase tracking-wider text-smoke font-sans">Tahap</span>
-            <span class="text-xs sm:text-sm font-semibold text-white tabular whitespace-nowrap" id="badgeStage">1 / 3</span>
+            <span class="text-xs sm:text-sm text-white tabular whitespace-nowrap" id="badgeStage">--</span>
           </div>
 
-          <!-- Peserta -->
           <div class="px-2.5 lg:px-3 py-1 flex flex-col items-center justify-center">
             <span class="text-[10px] uppercase tracking-wider text-smoke font-sans">Peserta</span>
-            <span class="text-xs sm:text-sm font-semibold text-white tabular whitespace-nowrap" id="badgeParticipants">0</span>
+            <span class="text-xs sm:text-sm text-white tabular whitespace-nowrap" id="badgeParticipants">--</span>
           </div>
 
-          <!-- Kekayaan Tertinggi -->
           <div class="px-2.5 lg:px-3 py-1 flex flex-col items-center justify-center">
             <span class="text-[10px] uppercase tracking-wider text-smoke font-sans">Aset Puncak</span>
-            <span class="text-xs sm:text-sm font-semibold text-pulse tabular whitespace-nowrap" id="badgeHighestWealth">Rp 100,0 Jt</span>
+            <span class="text-xs sm:text-sm text-pulse tabular whitespace-nowrap" id="badgeHighestWealth">--</span>
           </div>
         </div>
 
         <!-- Utility Buttons: QR & Fullscreen -->
         <div class="flex items-center gap-1.5 shrink-0">
-          <button onclick="showQRModal()"
-            class="h-9 px-3 flex items-center gap-1.5 rounded-button bg-carbon border border-graphite hover:border-chalk text-chalk font-mono text-xs font-medium transition-all cursor-pointer hover:bg-obsidian shadow-sm shrink-0"
+          <button type="button" id="btnOpenQRModal" onclick="showQRModal()"
+            class="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center gap-1.5 rounded-button bg-carbon border border-ui hover:border-chalk text-chalk font-mono text-xs transition-colors cursor-pointer hover:bg-obsidian shrink-0"
             title="Tampilkan QR Code pendaftaran" aria-label="Pindai QR">
-            <svg aria-hidden="true" class="w-3.5 h-3.5 text-smoke shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <svg aria-hidden="true" class="w-4 h-4 text-chalk shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.5A.75.75 0 014.5 3.75h4.5a.75.75 0 01.75.75v4.5a.75.75 0 01-.75.75h-4.5a.75.75 0 01-.75-.75V4.5zm10.5 0a.75.75 0 01.75-.75h4.5a.75.75 0 01.75.75v4.5a.75.75 0 01-.75.75h-4.5a.75.75 0 01-.75-.75V4.5zM3.75 15a.75.75 0 01.75-.75h4.5a.75.75 0 01.75.75v4.5a.75.75 0 01-.75.75h-4.5a.75.75 0 01-.75-.75V15zm10.5 0a.75.75 0 01.75-.75h1.5a.75.75 0 01.75.75v1.5a.75.75 0 01-.75.75h-1.5a.75.75 0 01-.75-.75V15zm3.75 3.75a.75.75 0 01.75-.75h1.5a.75.75 0 01.75.75v1.5a.75.75 0 01-.75.75h-1.5a.75.75 0 01-.75-.75v-1.5z" />
             </svg>
             <span class="hidden md:inline">Pindai QR</span>
           </button>
 
-          <button id="btnFullscreen" onclick="toggleFullscreen()"
-            class="w-9 h-9 flex items-center justify-center rounded-button bg-carbon border border-graphite hover:border-chalk text-smoke hover:text-chalk font-mono text-xs transition-all cursor-pointer hover:bg-obsidian shrink-0"
+          <button type="button" id="btnFullscreen" onclick="toggleFullscreen()"
+            class="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-button bg-carbon border border-ui hover:border-chalk text-chalk hover:text-white font-mono text-xs transition-colors cursor-pointer hover:bg-obsidian shrink-0"
             title="Layar Penuh" aria-label="Layar Penuh">
             <svg id="fullscreenIconSvg" aria-hidden="true" class="w-4 h-4 overflow-visible shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
               <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H5v4M15 5h4v4M9 19H5v-4M15 19h4v-4" />
@@ -108,26 +99,55 @@
 
       </div>
 
+      <!-- Mobile Metrics Fallback (< md) -->
+      <div class="w-full md:hidden grid grid-cols-4 divide-x divide-graphite rounded-card hairline overflow-hidden bg-carbon font-mono text-center">
+        <div class="px-2 py-1.5 flex flex-col items-center">
+          <span class="text-[10px] uppercase text-smoke font-sans">Putaran</span>
+          <span class="text-xs text-white tabular" id="badgeRoundMobile">--</span>
+        </div>
+        <div class="px-2 py-1.5 flex flex-col items-center">
+          <span class="text-[10px] uppercase text-smoke font-sans">Tahap</span>
+          <span class="text-xs text-white tabular" id="badgeStageMobile">--</span>
+        </div>
+        <div class="px-2 py-1.5 flex flex-col items-center">
+          <span class="text-[10px] uppercase text-smoke font-sans">Peserta</span>
+          <span class="text-xs text-white tabular" id="badgeParticipantsMobile">--</span>
+        </div>
+        <div class="px-2 py-1.5 flex flex-col items-center">
+          <span class="text-[10px] uppercase text-smoke font-sans">Puncak</span>
+          <span class="text-xs text-pulse tabular truncate max-w-full" id="badgeHighestWealthMobile">--</span>
+        </div>
+      </div>
+
     </div>
   </header>
 
   <!-- Main Presentation Content -->
   <main class="max-w-[1720px] w-full mx-auto px-4 sm:px-8 py-5 pb-8 flex-grow relative z-10 flex flex-col gap-6">
 
+    <!-- Connection Error Banner -->
+    <div id="broadcastSyncError" role="alert" aria-live="polite"
+      class="hidden p-3.5 rounded-card hairline bg-carbon text-loss text-caption flex flex-wrap items-center justify-between gap-3">
+      <span id="broadcastSyncErrorText">Gagal terhubung ke server simulasi.</span>
+      <button type="button" onclick="fetchState(true)" class="btn-ghost text-caption px-4">
+        Coba Lagi
+      </button>
+    </div>
+
     <!-- TOP SECTION: Active Scenario Card (7 Cols) & Leaderboard (5 Cols) -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
 
       <!-- LEFT: Active Scenario Card & Impact Matrix (7 Columns) -->
       <div class="lg:col-span-7 flex flex-col">
-        <div class="panel p-6 sm:p-7 flex flex-col justify-between h-full bg-carbon/95 backdrop-blur-md relative overflow-hidden">
+        <div class="panel p-6 sm:p-7 flex flex-col justify-between h-full bg-carbon relative overflow-hidden">
 
           <!-- Card Placeholder (When Round 0) -->
           <div id="cardPlaceholder" class="flex flex-col items-center justify-center text-center py-16 sm:py-20 px-4 h-full">
-            <h2 class="text-heading-sm sm:text-heading text-chalk mb-2 font-medium">
-              Sesi Simulasi Siap Dimulai
+            <h2 id="cardPlaceholderTitle" class="text-heading-sm sm:text-heading text-chalk mb-2">
+              Memuat Sesi Simulasi...
             </h2>
-            <p class="text-body text-smoke max-w-lg leading-relaxed text-sm">
-              Pendaftaran peserta dibuka. Skenario pasar kuartal pertama akan ditampilkan saat putaran dimulai.
+            <p id="cardPlaceholderDesc" class="text-caption text-smoke max-w-lg leading-relaxed">
+              Menghubungkan layar proyektor ke server simulasi.
             </p>
           </div>
 
@@ -136,17 +156,17 @@
 
             <!-- Card Header: Round Tag, Category & Allocation Input Status -->
             <div class="flex flex-wrap items-center justify-between gap-3 pb-4 hairline-b mb-4">
-              <div class="flex items-center gap-2.5">
-                <span id="cardRoundTag" class="px-2.5 py-1 rounded-tag font-mono text-xs font-semibold bg-obsidian text-chalk border border-graphite">
+              <div class="flex flex-wrap items-center gap-2.5">
+                <span id="cardRoundTag" class="px-2.5 py-1 rounded-tag font-mono text-xs bg-obsidian text-chalk border border-graphite">
                   PUTARAN 1 · K001
                 </span>
                 <span id="cardCategoryTag" class="px-2.5 py-1 rounded-tag font-mono text-xs text-smoke bg-obsidian hairline">
-                  Makro & Inflasi
+                  Makro &amp; Inflasi
                 </span>
               </div>
 
               <!-- Input Status Badge -->
-              <div id="badgeInputStatus" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-tag font-mono text-xs font-semibold bg-obsidian hairline text-smoke">
+              <div id="badgeInputStatus" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-tag font-mono text-xs bg-obsidian hairline text-smoke">
                 <span class="w-1.5 h-1.5 rounded-full bg-smoke" id="inputStatusDot"></span>
                 <span id="inputStatusText">Alokasi Ditutup</span>
               </div>
@@ -154,7 +174,7 @@
 
             <!-- Card Body: Headline & Narration -->
             <div class="space-y-3.5 mb-6">
-              <h2 id="cardTitle" class="text-heading sm:text-heading-lg text-chalk font-medium tracking-tight leading-snug">
+              <h2 id="cardTitle" class="text-heading sm:text-heading-lg text-chalk">
                 Judul Skenario Pasar
               </h2>
               <p id="cardNarration" class="text-body sm:text-subheading text-ash leading-relaxed font-sans">
@@ -168,59 +188,54 @@
 
             <!-- 5-Asset Impact Matrix -->
             <div>
-              <div class="meta text-smoke mb-2 flex items-center justify-between text-xs">
+              <div class="meta text-smoke mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span>Imbal Hasil Pasar Kuartal Ini:</span>
                 <span class="font-mono text-[11px] text-smoke">Dasar + Efek Skenario</span>
               </div>
 
               <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-                <!-- Sukuk -->
                 <div class="p-3 rounded-card hairline bg-obsidian flex flex-col justify-between">
                   <div class="flex items-center justify-between mb-1">
                     <span class="font-mono text-xs text-ash">Sukuk/SBN</span>
                     <span class="w-2 h-2 rounded-full bg-sukuk"></span>
                   </div>
-                  <div class="text-heading-xs tabular font-mono font-semibold" id="impactSukuk">0,0%</div>
+                  <div class="text-heading-xs tabular font-mono" id="impactSukuk">0,0%</div>
                   <div class="text-[10px] text-smoke font-mono truncate mt-1" id="impactSukukSub">Dasar 0% · Efek 0%</div>
                 </div>
 
-                <!-- Saham -->
                 <div class="p-3 rounded-card hairline bg-obsidian flex flex-col justify-between">
                   <div class="flex items-center justify-between mb-1">
                     <span class="font-mono text-xs text-ash">Saham</span>
                     <span class="w-2 h-2 rounded-full bg-saham"></span>
                   </div>
-                  <div class="text-heading-xs tabular font-mono font-semibold" id="impactSaham">0,0%</div>
+                  <div class="text-heading-xs tabular font-mono" id="impactSaham">0,0%</div>
                   <div class="text-[10px] text-smoke font-mono truncate mt-1" id="impactSahamSub">Dasar 0% · Efek 0%</div>
                 </div>
 
-                <!-- RDPU -->
                 <div class="p-3 rounded-card hairline bg-obsidian flex flex-col justify-between">
                   <div class="flex items-center justify-between mb-1">
                     <span class="font-mono text-xs text-ash">Pasar Uang</span>
                     <span class="w-2 h-2 rounded-full bg-rdpu"></span>
                   </div>
-                  <div class="text-heading-xs tabular font-mono font-semibold" id="impactRdpu">0,0%</div>
+                  <div class="text-heading-xs tabular font-mono" id="impactRdpu">0,0%</div>
                   <div class="text-[10px] text-smoke font-mono truncate mt-1" id="impactRdpuSub">Dasar 0% · Efek 0%</div>
                 </div>
 
-                <!-- Emas -->
                 <div class="p-3 rounded-card hairline bg-obsidian flex flex-col justify-between">
                   <div class="flex items-center justify-between mb-1">
                     <span class="font-mono text-xs text-ash">Emas</span>
                     <span class="w-2 h-2 rounded-full bg-emas"></span>
                   </div>
-                  <div class="text-heading-xs tabular font-mono font-semibold" id="impactEmas">0,0%</div>
+                  <div class="text-heading-xs tabular font-mono" id="impactEmas">0,0%</div>
                   <div class="text-[10px] text-smoke font-mono truncate mt-1" id="impactEmasSub">Dasar 0% · Efek 0%</div>
                 </div>
 
-                <!-- Campuran -->
                 <div class="col-span-2 sm:col-span-1 p-3 rounded-card hairline bg-obsidian flex flex-col justify-between">
                   <div class="flex items-center justify-between mb-1">
                     <span class="font-mono text-xs text-ash">Campuran</span>
                     <span class="w-2 h-2 rounded-full bg-campuran"></span>
                   </div>
-                  <div class="text-heading-xs tabular font-mono font-semibold" id="impactCampuran">0,0%</div>
+                  <div class="text-heading-xs tabular font-mono" id="impactCampuran">0,0%</div>
                   <div class="text-[10px] text-smoke font-mono truncate mt-1" id="impactCampuranSub">Dasar 0% · Efek 0%</div>
                 </div>
               </div>
@@ -243,30 +258,27 @@
 
       <!-- RIGHT: Leaderboard Panel (5 Columns) -->
       <div class="lg:col-span-5 flex flex-col">
-        <div class="panel p-6 sm:p-7 flex flex-col justify-between h-full bg-carbon/95 backdrop-blur-md">
+        <div class="panel p-6 sm:p-7 flex flex-col justify-between h-full bg-carbon">
 
-          <!-- Leaderboard Header with Tabs -->
           <div>
-            <div class="flex items-center justify-between pb-4 hairline-b mb-3">
+            <div class="flex flex-wrap items-center justify-between gap-3 pb-4 hairline-b mb-3">
               <div>
-                <h3 class="text-heading-xs text-chalk font-semibold" id="lbTabTitle">Papan Peringkat</h3>
+                <h2 class="text-heading-xs text-chalk" id="lbTabTitle">Papan Peringkat</h2>
                 <p class="text-caption text-smoke" id="lbTabSub">10 Portofolio Terbesar</p>
               </div>
 
-              <!-- Segmented Tab Controls -->
-              <div class="inline-flex rounded-card hairline p-0.5 bg-obsidian text-caption font-mono">
-                <button id="btnTabTop10" onclick="switchLbTab('top10')"
-                  class="px-3 py-1 rounded-card bg-chalk text-obsidian font-semibold transition-colors">
+              <div role="tablist" aria-label="Tampilan papan peringkat" class="inline-flex rounded-card hairline-ui p-0.5 bg-obsidian text-caption font-mono">
+                <button type="button" id="btnTabTop10" role="tab" aria-selected="true" onclick="switchLbTab('top10')" onkeydown="handleTabKeydown(event, 'top10')"
+                  class="min-h-[44px] px-3 py-1 rounded-card bg-chalk text-obsidian transition-colors cursor-pointer focus-visible:relative focus-visible:z-10">
                   Top 10
                 </button>
-                <button id="btnTabTangguh" onclick="switchLbTab('tangguh')"
-                  class="px-3 py-1 rounded-card text-smoke hover:text-chalk transition-colors">
+                <button type="button" id="btnTabTangguh" role="tab" aria-selected="false" onclick="switchLbTab('tangguh')" onkeydown="handleTabKeydown(event, 'tangguh')"
+                  class="min-h-[44px] px-3 py-1 rounded-card text-smoke hover:text-chalk transition-colors cursor-pointer focus-visible:relative focus-visible:z-10">
                   Tangguh
                 </button>
               </div>
             </div>
 
-            <!-- Table Container -->
             <div class="overflow-x-auto">
               <table class="w-full text-left text-caption">
                 <thead>
@@ -282,7 +294,7 @@
                 <tbody id="leaderboardTbody" class="divide-y divide-graphite font-mono">
                   <tr>
                     <td colspan="6" class="text-center py-12 text-smoke italic font-sans">
-                      Menunggu peserta mendaftar...
+                      Memuat data peserta...
                     </td>
                   </tr>
                 </tbody>
@@ -290,13 +302,12 @@
             </div>
           </div>
 
-          <!-- Footnote -->
-          <div class="mt-4 pt-3 hairline-t text-caption text-smoke leading-relaxed flex items-center justify-between">
+          <div class="mt-4 pt-3 hairline-t text-caption text-smoke leading-relaxed flex flex-wrap items-center justify-between gap-2">
             <div>
-              <span class="text-ash font-medium">Kriteria Tangguh:</span> Portofolio dengan drawdown kumulatif terendah.
+              <span class="text-ash">Kriteria Tangguh:</span> Nilai aset tertinggi dengan drawdown kumulatif ≤ 10%.
             </div>
-            <div class="font-mono text-[11px] text-smoke shrink-0 ml-2" id="syncStatusText">
-              Tersinkronisasi
+            <div class="font-mono text-[11px] text-smoke shrink-0" id="syncStatusText">
+              Menghubungkan...
             </div>
           </div>
 
@@ -308,31 +319,35 @@
     <!-- BOTTOM ROW: Performance Charts Grid (Full 12 Columns) -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2">
 
-      <!-- Chart 1: Top 5 Portfolios Progression -->
-      <div class="lg:col-span-6 panel p-5 sm:p-6 bg-carbon/95 backdrop-blur-md">
-        <div class="flex items-center justify-between pb-3 hairline-b mb-3">
+      <div class="lg:col-span-6 panel p-5 sm:p-6 bg-carbon">
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-3 hairline-b mb-3">
           <div>
-            <h4 class="text-heading-xs text-chalk font-semibold">Portofolio 5 Teratas</h4>
+            <h3 class="text-heading-xs text-chalk">Portofolio 5 Teratas</h3>
             <p class="text-caption text-smoke">Pertumbuhan nilai aset peserta terbaik per kuartal</p>
           </div>
           <span class="font-mono text-xs text-smoke">Nilai Portofolio</span>
         </div>
         <div class="h-64 sm:h-72 w-full relative">
           <canvas id="chartTopPlayers"></canvas>
+          <div id="chartTopEmpty" class="absolute inset-0 flex items-center justify-center text-caption text-smoke font-mono pointer-events-none text-center px-4">
+            Menunggu putaran pertama dimulai...
+          </div>
         </div>
       </div>
 
-      <!-- Chart 2: Benchmark Asset Indexes -->
-      <div class="lg:col-span-6 panel p-5 sm:p-6 bg-carbon/95 backdrop-blur-md">
-        <div class="flex items-center justify-between pb-3 hairline-b mb-3">
+      <div class="lg:col-span-6 panel p-5 sm:p-6 bg-carbon">
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-3 hairline-b mb-3">
           <div>
-            <h4 class="text-heading-xs text-chalk font-semibold">Pergerakan Indeks Acuan</h4>
+            <h3 class="text-heading-xs text-chalk">Pergerakan Indeks Acuan</h3>
             <p class="text-caption text-smoke">Kinerja kumulatif 5 instrumen pasar (Basis 100)</p>
           </div>
           <span class="font-mono text-xs text-smoke">Basis 100</span>
         </div>
         <div class="h-64 sm:h-72 w-full relative">
           <canvas id="chartAssetIndexes"></canvas>
+          <div id="chartAssetEmpty" class="hidden absolute inset-0 flex items-center justify-center text-caption text-smoke font-mono pointer-events-none text-center px-4">
+            Grafik indeks aset tidak tersedia (pustaka grafik gagal dimuat).
+          </div>
         </div>
       </div>
 
@@ -340,28 +355,29 @@
 
   </main>
 
-  <!-- QR Code Modal (for joining) -->
-  <div id="qrModal" class="fixed inset-0 z-50 bg-obsidian/80 backdrop-blur-md hidden items-center justify-center p-4">
-    <div class="panel-deep p-8 max-w-sm w-full bg-carbon rounded-card hairline shadow-2xl text-center space-y-4">
+  <!-- QR Code Modal -->
+  <div id="qrModal" role="dialog" aria-modal="true" aria-labelledby="qrModalTitle"
+    class="fixed inset-0 z-50 bg-obsidian/85 hidden items-center justify-center p-4">
+    <div class="panel-deep p-6 sm:p-8 max-w-sm w-full max-h-[90vh] overflow-y-auto bg-carbon rounded-card hairline text-center space-y-4">
       <div class="meta text-smoke">Pendaftaran Peserta</div>
-      <h3 class="text-heading-sm text-chalk font-medium">Pindai untuk Bergabung</h3>
+      <h3 id="qrModalTitle" class="text-heading-sm text-chalk">Pindai untuk Bergabung</h3>
       <p class="text-caption text-smoke">Arahkan kamera smartphone ke kode QR berikut untuk membuka formulir peserta.</p>
 
-      <div class="p-4 bg-white rounded-card mx-auto inline-block shadow-inner">
+      <div class="p-4 bg-white rounded-card mx-auto inline-block">
         <div id="qrCodeContainer" class="flex items-center justify-center"></div>
       </div>
 
-      <div class="font-mono text-xs text-chalk break-all p-2 rounded bg-obsidian hairline" id="qrUrlText">
+      <div class="font-mono text-xs text-chalk break-all p-2 rounded-card bg-obsidian hairline" id="qrUrlText">
         danarakca.site/player.html
       </div>
 
-      <button onclick="hideQRModal()" class="btn-ghost w-full py-2.5 font-mono text-xs">
+      <button type="button" id="btnCloseQrModal" onclick="hideQRModal()" class="btn-ghost w-full font-mono text-xs">
         Tutup
       </button>
     </div>
   </div>
 
-  <script src="broadcast.js"></script>
+  <script src="broadcast.js?v=2.4"></script>
 </body>
 
 </html>

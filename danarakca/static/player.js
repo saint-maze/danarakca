@@ -1,8 +1,7 @@
-// Player Front-End Logic — Hyperstudio Dark Editorial Edition
+// Player Front-End Logic (Hyperstudio Dark Editorial Edition)
 
 const LIVE_CHANNEL = 'danarakca_live_fafc19b30c66';
 let liveEventSource = null;
-let lastProcessedCardRound = -1;
 let currentLiveChannel = null;
 let localBus = null;
 try {
@@ -16,17 +15,20 @@ try {
   }
 } catch (e) {}
 
-let currentUser = null; // { code, name }
+const ASSET_KEYS = ['sukuk', 'saham', 'rdpu', 'emas', 'campuran'];
+const DEFAULT_ALLOCATION = { sukuk: 20, saham: 20, rdpu: 20, emas: 20, campuran: 20 };
+const PRESETS = {
+  rata: { id: 'btnPresetRata', alloc: { ...DEFAULT_ALLOCATION } },
+  konservatif: { id: 'btnPresetKonservatif', alloc: { sukuk: 50, saham: 10, rdpu: 25, emas: 10, campuran: 5 } },
+  agresif: { id: 'btnPresetAgresif', alloc: { sukuk: 10, saham: 60, rdpu: 10, emas: 10, campuran: 10 } }
+};
+
+let currentUser = null;
 let gameState = null;
 let participantData = null;
+let lastLogoutTrigger = null;
 
-let allocation = {
-  sukuk: 20,
-  saham: 20,
-  rdpu: 20,
-  emas: 20,
-  campuran: 20
-};
+let allocation = { ...DEFAULT_ALLOCATION };
 
 let userIsEditing = false;
 let submitInFlight = false;
@@ -34,95 +36,40 @@ let lastLoadedStage = null;
 let savedAllocations = {};
 let savedAllocTs = {};
 
-function renderInstantCardPreview(round, card) {
-  const preview = document.getElementById('playerCardPreview');
-  if (!preview || !card) return;
+function getPlayerToken() {
+  return localStorage.getItem('danarakca_player_token') || '';
+}
 
-  preview.classList.remove('hidden');
-
-  // Re-trigger animation
-  preview.classList.remove('card-in');
-  void preview.offsetWidth; // Force DOM reflow
-  preview.classList.add('card-in');
-
-  const roundEl = document.getElementById('previewRound');
-  const catEl = document.getElementById('previewCategory');
-  const titleEl = document.getElementById('previewTitle');
-  const narrEl = document.getElementById('previewNarration');
-
-  if (roundEl) roundEl.innerText = `Putaran ${round} · ${card.id || ''}`;
-  if (catEl) catEl.innerText = card.category || 'Berita Pasar';
-  if (titleEl) titleEl.innerText = card.title || '';
-  if (narrEl) narrEl.innerText = card.narration || '';
+function setPlayerSyncError(msg) {
+  const banner = document.getElementById('playerSyncError');
+  const txt = document.getElementById('playerSyncErrorText');
+  if (!banner) return;
+  if (msg) {
+    if (txt) txt.innerText = msg;
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
 }
 
 function isStaleRealtimeEvent(msg, sentAtSec) {
-  // ntfy replays cached messages when EventSource reconnects (Last-Event-ID), e.g. after a phone unlocks.
   if (sentAtSec && (Date.now() / 1000 - sentAtSec) > 60) return true;
   if (!gameState) return false;
   const curSess = gameState.session_id || 0;
   const msgSess = msg.session_id || 0;
   if (msg.event === 'GAME_RESET') return msgSess <= curSess;
-  return msgSess !== curSess;
+  return Boolean(msgSess && curSess && msgSess !== curSess);
 }
 
+// Treat external SSE events strictly as a wake-up signal to fetch authoritative server state
 function handleRealtimeEvent(msg, sentAtSec) {
   if (!msg || !msg.event) return;
   if (isStaleRealtimeEvent(msg, sentAtSec)) return;
 
-  if (msg.event === 'CARD_DRAWN') {
-    const round = msg.round || msg.current_round;
-    const card = msg.card || (msg.card_entry && msg.card_entry.card);
-
-    if (!round || round <= lastProcessedCardRound) return;
-    if (gameState && round <= (gameState.current_round || 0)) return;
-    lastProcessedCardRound = round;
-
-    if (card) {
-      renderInstantCardPreview(round, card);
-    }
-
-    const total = gameState ? gameState.total_rounds : 30;
-    const stage = msg.stage || (gameState ? gameState.current_stage : 1);
-    const headerRound = document.getElementById('headerRoundInfo');
-    if (headerRound) headerRound.innerText = `Putaran ${round}/${total} · Tahap ${stage}`;
-
-    if (gameState) {
-      gameState.stage_input_open = false;
-      gameState.current_round = round;
-      updateStageInputStatus();
-    }
-
-    if (navigator.vibrate) {
-      try { navigator.vibrate([25, 40, 25]); } catch (e) {}
-    }
-
-    fetchStateAndParticipant();
-  } else if (msg.event === 'STAGE_INPUT_TOGGLED') {
-    if (gameState && (msg.current_stage || 0) >= gameState.current_stage) {
-      gameState.stage_input_open = Boolean(msg.stage_input_open);
-      updateStageInputStatus();
-    }
-    fetchStateAndParticipant();
-  } else if (msg.event === 'STAGE_ADVANCED') {
-    if (gameState && (msg.current_stage || 0) > gameState.current_stage) {
-      gameState.current_stage = msg.current_stage;
-      gameState.stage_input_open = true;
-      updateHeaderRoundInfo();
-      updateStageInputStatus();
-    }
-    fetchStateAndParticipant();
-  } else if (msg.event === 'MODE_CHANGED') {
-    if (gameState) {
-      if (msg.total_stages) gameState.total_stages = msg.total_stages;
-      if (msg.total_rounds) gameState.total_rounds = msg.total_rounds;
-      updateHeaderRoundInfo();
-    }
-    fetchStateAndParticipant();
-  } else if (msg.event === 'GAME_RESET') {
-    lastProcessedCardRound = -1;
-    fetchStateAndParticipant();
+  if (msg.event === 'CARD_DRAWN' && navigator.vibrate) {
+    try { navigator.vibrate([25, 40, 25]); } catch (e) {}
   }
+  fetchStateAndParticipant();
 }
 
 let sseErrorCount = 0;
@@ -150,12 +97,13 @@ function initRealtimeStream(channel) {
         if (raw.event !== 'message' || !raw.message) return;
         const msg = typeof raw.message === 'string' ? JSON.parse(raw.message) : raw.message;
         handleRealtimeEvent(msg, raw.time);
-      } catch (err) {}
+      } catch (err) {
+        fetchStateAndParticipant();
+      }
     };
     liveEventSource.onerror = () => {
       sseErrorCount++;
       isSseActive = false;
-      // Close immediately if closed or 403 rate-limited on public SSE to prevent infinite console reconnects
       if (liveEventSource && (liveEventSource.readyState === EventSource.CLOSED || sseErrorCount >= 2)) {
         try { liveEventSource.close(); } catch (e) {}
         liveEventSource = null;
@@ -167,29 +115,20 @@ function initRealtimeStream(channel) {
   }
 }
 
-function loadSavedAllocations() {
+function readStoredJsonObject(key) {
   try {
-    const raw = localStorage.getItem('danarakca_allocations');
+    const raw = localStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') {
-        savedAllocations = parsed;
-      }
+      if (parsed && typeof parsed === 'object') return parsed;
     }
-  } catch (e) {
-    savedAllocations = {};
-  }
-  try {
-    const rawTs = localStorage.getItem('danarakca_alloc_ts');
-    if (rawTs) {
-      const parsedTs = JSON.parse(rawTs);
-      if (parsedTs && typeof parsedTs === 'object') {
-        savedAllocTs = parsedTs;
-      }
-    }
-  } catch (e) {
-    savedAllocTs = {};
-  }
+  } catch (e) {}
+  return {};
+}
+
+function loadSavedAllocations() {
+  savedAllocations = readStoredJsonObject('danarakca_allocations');
+  savedAllocTs = readStoredJsonObject('danarakca_alloc_ts');
 }
 
 function persistSavedAllocations() {
@@ -205,10 +144,7 @@ function buildParticipantSync() {
   return {
     code: currentUser.code,
     name: currentUser.name,
-    joined_at: (participantData && participantData.joined_at) ? participantData.joined_at : 0,
     session_id: gameState ? (gameState.session_id || savedSess) : savedSess,
-    current_stage: gameState ? (gameState.current_stage || 1) : 1,
-    drawn_card_ids: (gameState && Array.isArray(gameState.drawn_card_ids)) ? gameState.drawn_card_ids : [],
     allocations: savedAllocations,
     alloc_ts: savedAllocTs
   };
@@ -230,13 +166,12 @@ function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-// In-App Toast Notification (Ganti alert() basic)
 function showToast(msg, type = 'info') {
   const container = document.getElementById('toastContainerPlayer');
   if (!container) return;
   const toast = document.createElement('div');
   const borderCol = type === 'error' ? 'border-loss text-loss' : (type === 'success' ? 'border-pulse text-chalk' : 'border-graphite text-chalk');
-  toast.className = `panel px-4 py-3 bg-carbon text-caption pointer-events-auto shadow-2xl flex items-center gap-2.5 rounded-card card-in ${borderCol}`;
+  toast.className = `panel px-4 py-3 bg-carbon text-caption pointer-events-auto flex items-center gap-2.5 rounded-card card-in ${borderCol}`;
   const span = document.createElement('span');
   span.textContent = String(msg ?? '');
   toast.appendChild(span);
@@ -249,16 +184,17 @@ function showToast(msg, type = 'info') {
   }, 3500);
 }
 
-// 1. Auth & View State
 function initAuth() {
   loadSavedAllocations();
   const savedName = localStorage.getItem('danarakca_name');
   const savedCode = localStorage.getItem('danarakca_code');
+  const savedToken = getPlayerToken();
 
-  if (savedName) {
+  if (savedName && savedToken) {
     currentUser = { code: savedCode || savedName, name: savedName };
     showDashboard();
   } else {
+    clearPlayerSession();
     showLogin();
   }
 }
@@ -268,6 +204,9 @@ function showLogin() {
   document.getElementById('dashboardScreen').classList.add('hidden');
   document.getElementById('userHeaderBadge').classList.add('hidden');
   document.getElementById('userHeaderBadge').classList.remove('flex');
+  const hdrInfo = document.getElementById('headerRoundInfo');
+  if (hdrInfo) hdrInfo.innerText = 'Peserta';
+  setPlayerSyncError(null);
 }
 
 function showDashboard() {
@@ -275,19 +214,21 @@ function showDashboard() {
   document.getElementById('dashboardScreen').classList.remove('hidden');
   document.getElementById('userHeaderBadge').classList.remove('hidden');
   document.getElementById('userHeaderBadge').classList.add('flex');
-  
+
   const badgeEl = document.getElementById('badgeUserName') || document.getElementById('badgeUserCode');
   if (badgeEl) badgeEl.innerText = currentUser.name;
-  
+
   const teamEl = document.getElementById('displayTeamName');
   if (teamEl) teamEl.innerText = currentUser.name;
 
+  syncPresetPressedState();
   fetchStateAndParticipant();
 }
 
 async function handleLogin(e) {
   e.preventDefault();
   const inputEl = document.getElementById('inputName');
+  const btnEl = document.getElementById('btnLoginSubmit');
   const name = inputEl ? inputEl.value.trim() : '';
 
   if (!name) {
@@ -295,17 +236,31 @@ async function handleLogin(e) {
     return;
   }
 
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.innerText = 'Memproses...';
+  }
+
   try {
     const res = await fetch('/api/participant/register', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name })
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Participant-Token': getPlayerToken()
+      },
+      body: JSON.stringify({
+        name: name,
+        participant_token: getPlayerToken()
+      })
     });
     const json = await res.json();
-    if (json.success && json.data) {
+    if (res.ok && json.success && json.data) {
       const p = json.data;
       localStorage.setItem('danarakca_code', p.code);
       localStorage.setItem('danarakca_name', p.name);
+      if (json.participant_token) {
+        localStorage.setItem('danarakca_player_token', json.participant_token);
+      }
       if (json.state && json.state.session_id) {
         localStorage.setItem('danarakca_session_id', String(json.state.session_id));
       }
@@ -316,34 +271,54 @@ async function handleLogin(e) {
       }
       currentUser = { code: p.code, name: p.name };
       lastLoadedStage = null;
+      setPlayerSyncError(null);
       showDashboard();
     } else {
       showToast(json.error || 'Gagal mendaftar', 'error');
     }
   } catch (err) {
     showToast('Koneksi server gagal: ' + err.message, 'error');
+  } finally {
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.innerText = 'Masuk';
+    }
   }
 }
 
 function logout() {
+  lastLogoutTrigger = document.activeElement;
   const modal = document.getElementById('modalConfirmPlayer');
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    const cancelBtn = document.getElementById('btnCancelLogoutPlayer');
+    if (cancelBtn) cancelBtn.focus();
+  }
 }
 
 function closePlayerModal() {
   const modal = document.getElementById('modalConfirmPlayer');
-  if (modal) modal.classList.add('hidden');
+  if (!modal || modal.classList.contains('hidden')) return;
+  modal.classList.add('hidden');
+  if (lastLogoutTrigger && typeof lastLogoutTrigger.focus === 'function') {
+    lastLogoutTrigger.focus();
+    lastLogoutTrigger = null;
+  }
 }
 
 function confirmLogoutAction() {
+  lastLogoutTrigger = null;
   closePlayerModal();
   clearPlayerSession();
   showLogin();
+  const inputName = document.getElementById('inputName');
+  if (inputName) inputName.focus();
 }
 
 function clearPlayerSession() {
   localStorage.removeItem('danarakca_code');
   localStorage.removeItem('danarakca_name');
+  localStorage.removeItem('danarakca_player_token');
   localStorage.removeItem('danarakca_allocations');
   localStorage.removeItem('danarakca_alloc_ts');
   localStorage.removeItem('danarakca_session_id');
@@ -351,22 +326,21 @@ function clearPlayerSession() {
   participantData = null;
   savedAllocations = {};
   savedAllocTs = {};
-  allocation = { sukuk: 20, saham: 20, rdpu: 20, emas: 20, campuran: 20 };
+  allocation = { ...DEFAULT_ALLOCATION };
   userIsEditing = false;
   lastLoadedStage = null;
 }
 
-// Facilitator reset without keeping participants: the previous roster is gone, so send the player back to login.
+// Facilitator reset without keeping participants: send player cleanly back to login
 function forceRelogin(newState) {
   if (!currentUser) return;
   const prevName = currentUser.name;
   clearPlayerSession();
-  if (newState) gameState = newState;
-  lastProcessedCardRound = -1;
+  gameState = newState || null;
   showLogin();
   const inputEl = document.getElementById('inputName');
   if (inputEl) inputEl.value = prevName || '';
-  showToast('Permainan baru telah dimulai. Silakan masuk kembali untuk bergabung.', 'info');
+  showToast('Sesi permainan diperbarui. Silakan masuk kembali untuk bergabung.', 'info');
 }
 
 function applyPlayerSyncResponse(newState, newParticipant, force = false) {
@@ -377,20 +351,15 @@ function applyPlayerSyncResponse(newState, newParticipant, force = false) {
     const curVer = gameState ? (gameState.state_version || 0) : 0;
     const newVer = newState.state_version || 0;
 
-    // Sessions only increase; an older one comes from a lagging container and would show a wrong stage.
-    if (curSess > 0 && newSess < curSess) return;
+    if (!force && curSess > 0 && newSess < curSess) return;
 
-    // Detect game reset by Facilitator
-    if (curSess > 0 && newSess > curSess) {
+    if (curSess > 0 && newSess !== curSess) {
       savedAllocations = {};
       savedAllocTs = {};
       persistSavedAllocations();
-      localStorage.setItem('danarakca_session_id', String(newSess));
-      allocation = { sukuk: 20, saham: 20, rdpu: 20, emas: 20, campuran: 20 };
+      allocation = { ...DEFAULT_ALLOCATION };
       userIsEditing = false;
       lastLoadedStage = null;
-      lastProcessedCardRound = -1;
-      gameState = newState;
     } else if (gameState && newSess === curSess) {
       const curEpoch = gameState.roster_epoch || 0;
       const newEpoch = newState.roster_epoch || 0;
@@ -400,7 +369,6 @@ function applyPlayerSyncResponse(newState, newParticipant, force = false) {
       const newTotalP = newState.total_participants || 0;
 
       if (!force) {
-        // Reject lagging or partial container responses so player rank/portfolio value never jumps backward
         if (newEpoch < curEpoch) return;
         if (newEpoch === curEpoch) {
           if (newRound < curRound) return;
@@ -408,7 +376,6 @@ function applyPlayerSyncResponse(newState, newParticipant, force = false) {
           if (newVer < curVer && newRound <= curRound && newTotalP <= curTotalP) return;
         }
       } else if (newEpoch === curEpoch && (newRound < curRound || newTotalP < curTotalP)) {
-        // Submit hit a partial container: keep fuller game metrics and participant rank/value while syncing new allocation
         newState.current_round = Math.max(curRound, newRound);
         newState.total_participants = Math.max(curTotalP, newTotalP);
         newState.current_stage = Math.max(gameState.current_stage || 1, newState.current_stage || 1);
@@ -418,12 +385,9 @@ function applyPlayerSyncResponse(newState, newParticipant, force = false) {
           newParticipant.max_drawdown = participantData.max_drawdown;
         }
       }
-      localStorage.setItem('danarakca_session_id', String(newSess));
-      gameState = newState;
-    } else {
-      localStorage.setItem('danarakca_session_id', String(newSess));
-      gameState = newState;
     }
+    localStorage.setItem('danarakca_session_id', String(newSess));
+    gameState = newState;
 
     if (newState.live_channel && newState.live_channel !== currentLiveChannel) {
       initRealtimeStream(newState.live_channel);
@@ -457,7 +421,6 @@ function applyPlayerSyncResponse(newState, newParticipant, force = false) {
   }
 }
 
-// 2. Fetch Data (Single Atomic Sync Request)
 async function fetchStateAndParticipant() {
   if (!currentUser || submitInFlight) return;
   const sentName = currentUser.name;
@@ -465,10 +428,14 @@ async function fetchStateAndParticipant() {
   try {
     const res = await fetch('/api/player/sync', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Participant-Token': getPlayerToken()
+      },
       body: JSON.stringify({
         name: currentUser.name,
         code: currentUser.code,
+        participant_token: getPlayerToken(),
         participant_sync: buildParticipantSync()
       })
     });
@@ -478,11 +445,18 @@ async function fetchStateAndParticipant() {
       forceRelogin(json.data.state);
       return;
     }
-    if (json.success && json.data && !submitInFlight) {
+    if (res.ok && json.success && json.data && !submitInFlight) {
+      if (json.data.participant_token) {
+        localStorage.setItem('danarakca_player_token', json.data.participant_token);
+      }
+      setPlayerSyncError(null);
       applyPlayerSyncResponse(json.data.state, json.data.participant, false);
+    } else if (!res.ok || !json.success) {
+      setPlayerSyncError(json.error || 'Gagal menyinkronkan data dengan server.');
     }
   } catch (err) {
     console.error('Error syncing participant data:', err);
+    setPlayerSyncError('Koneksi ke server terputus. Coba lagi sebentar.');
   }
 }
 
@@ -510,24 +484,20 @@ function updateParticipantUI() {
     retEl.className = 'font-mono tabular text-loss';
   }
 
-  // Drawdown with high-contrast color according to financial risk definitions
   const mdd = participantData.max_drawdown || 0;
   const mddEl = document.getElementById('displayMaxDd');
   mddEl.innerText = formatPercent(mdd, false);
   if (mdd === 0) {
     mddEl.className = 'font-mono text-smoke tabular';
-  } else if (mdd <= 0.05) {
-    mddEl.className = 'font-mono text-[#f5b721] tabular font-medium';
   } else if (mdd <= 0.10) {
-    mddEl.className = 'font-mono text-[#fb923c] tabular font-bold';
+    mddEl.className = 'font-mono text-ash tabular';
   } else {
-    mddEl.className = 'font-mono text-loss tabular font-bold';
+    mddEl.className = 'font-mono text-loss tabular';
   }
 
   const totalPart = Math.max(1, gameState.total_participants || 1);
   document.getElementById('displayRank').innerText = `Peringkat #${participantData.current_rank} / ${totalPart}`;
 
-  // Only initialize/sync sliders once per stage transition so polling never moves sliders by itself
   const currStage = gameState.current_stage;
   if (lastLoadedStage !== currStage && !userIsEditing) {
     const stageKey = String(currStage);
@@ -547,21 +517,12 @@ function updateParticipantUI() {
     lastLoadedStage = currStage;
   }
 
-  // If input was closed while user was editing unsubmitted values, revert sliders to legitimate allocation
   if (!gameState.stage_input_open && userIsEditing) {
     userIsEditing = false;
     const stageKey = String(currStage);
-    const stageAlloc = savedAllocations[stageKey] || participantData.allocations?.[stageKey];
-    if (stageAlloc) {
-      allocation = { ...stageAlloc };
-    } else {
-      for (let s = currStage - 1; s >= 1; s--) {
-        const prevAlloc = savedAllocations[String(s)] || participantData.allocations?.[String(s)];
-        if (prevAlloc) {
-          allocation = { ...prevAlloc };
-          break;
-        }
-      }
+    const serverAlloc = savedAllocations[stageKey] || participantData.allocations?.[stageKey];
+    if (serverAlloc) {
+      allocation = { ...serverAlloc };
     }
     syncSliders();
   }
@@ -570,66 +531,57 @@ function updateParticipantUI() {
 function updateStageInputStatus() {
   if (!gameState) return;
   const banner = document.getElementById('allocationBanner');
-  const btnSubmit = document.getElementById('btnSubmitAllocation');
   const presetsGroup = document.getElementById('presetButtonsGroup');
-  const isOpen = gameState.stage_input_open;
-  if (gameState.status === 'GAME_FINISHED') {
-    banner.className = 'p-3.5 rounded-card hairline bg-carbon text-caption flex items-center justify-between gap-3 border-pulse/30';
-    banner.innerHTML = `
-      <div class="flex items-center gap-3">
-        <span class="w-1.5 h-1.5 rounded-full bg-pulse shrink-0 animate-pulse"></span>
-        <div>
-          <div class="text-pulse font-mono text-[12px] font-semibold">Simulasi Selesai</div>
-          <div class="text-smoke text-[11px]">Seluruh putaran telah usai. Cek pengumuman pemenang di layar proyektor booth.</div>
-        </div>
-      </div>
-    `;
-    btnSubmit.disabled = true;
-    presetsGroup.classList.add('opacity-40', 'pointer-events-none');
-    enableSliders(false);
-    return;
-  }
-
   const currentStage = Number(gameState.current_stage) || 1;
+  const isFinished = gameState.status === 'GAME_FINISHED';
+  const isEditable = !isFinished && Boolean(gameState.stage_input_open);
 
-  if (isOpen) {
-    banner.className = 'p-3.5 rounded-card hairline bg-carbon text-caption flex items-center justify-between gap-3';
-    banner.innerHTML = `
-      <div class="flex items-center gap-3">
-        <span class="w-1.5 h-1.5 rounded-full bg-chalk shrink-0"></span>
-        <div>
-          <div class="text-chalk font-mono text-[12px]">Sesi Alokasi Tahap ${currentStage} Terbuka</div>
-          <div class="text-smoke text-[11px]">Silakan sesuaikan alokasi portofolio tim lalu simpan.</div>
-        </div>
-      </div>
-    `;
-    checkTotalSum();
-    presetsGroup.classList.remove('opacity-40', 'pointer-events-none');
-    enableSliders(true);
-  } else {
-    banner.className = 'p-3.5 rounded-card hairline bg-carbon text-caption flex items-center justify-between gap-3';
-    banner.innerHTML = `
-      <div class="flex items-center gap-3">
-        <span class="w-1.5 h-1.5 rounded-full bg-iron shrink-0"></span>
-        <div>
-          <div class="text-ash font-mono text-[12px]">Sesi Alokasi Ditutup</div>
-          <div class="text-smoke text-[11px]">Putaran sedang berlangsung. Menunggu arahan fasilitator.</div>
-        </div>
-      </div>
-    `;
-    btnSubmit.disabled = true;
-    presetsGroup.classList.add('opacity-40', 'pointer-events-none');
-    enableSliders(false);
+  let borderCls = '';
+  let dotCls = 'bg-smoke';
+  let titleCls = 'text-ash';
+  let titleText = 'Sesi Alokasi Ditutup';
+  let descText = 'Putaran sedang berlangsung. Menunggu arahan fasilitator.';
+
+  if (isFinished) {
+    borderCls = 'border-pulse/30';
+    dotCls = 'bg-pulse';
+    titleCls = 'text-pulse';
+    titleText = 'Simulasi Selesai';
+    descText = 'Seluruh putaran telah usai. Cek pengumuman pemenang di layar proyektor booth.';
+  } else if (isEditable) {
+    dotCls = 'bg-pulse';
+    titleCls = 'text-chalk';
+    titleText = `Sesi Alokasi Tahap ${currentStage} Terbuka`;
+    descText = 'Silakan sesuaikan alokasi portofolio tim lalu simpan.';
   }
+
+  banner.className = `p-3.5 rounded-card hairline bg-carbon text-caption flex items-center justify-between gap-3 ${borderCls}`.trim();
+  banner.innerHTML = `
+    <div class="flex items-center gap-3">
+      <span class="w-1.5 h-1.5 rounded-full ${dotCls} shrink-0"></span>
+      <div>
+        <div class="${titleCls} font-mono text-[12px]">${titleText}</div>
+        <div class="text-smoke text-[11px]">${descText}</div>
+      </div>
+    </div>
+  `;
+  presetsGroup.classList.toggle('opacity-40', !isEditable);
+  presetsGroup.classList.toggle('pointer-events-none', !isEditable);
+  enableSliders(isEditable);
+  checkTotalSum();
 }
 
 function enableSliders(enable) {
-  ['sukuk', 'saham', 'rdpu', 'emas', 'campuran'].forEach(asset => {
+  ASSET_KEYS.forEach(asset => {
     const el = document.getElementById(`range${capitalize(asset)}`);
     if (el) el.disabled = !enable;
   });
   const btnAuto = document.getElementById('btnAutoBalance');
   if (btnAuto) btnAuto.disabled = !enable;
+  Object.values(PRESETS).forEach(({ id }) => {
+    const pBtn = document.getElementById(id);
+    if (pBtn) pBtn.disabled = !enable;
+  });
 }
 
 function updateCardPreview() {
@@ -641,7 +593,6 @@ function updateCardPreview() {
   }
   const lastCard = gameState.last_drawn_card;
   const card = lastCard.card;
-  lastProcessedCardRound = lastCard.round;
 
   preview.classList.remove('hidden');
   document.getElementById('previewRound').innerText = `Putaran ${lastCard.round} · ${card.id}`;
@@ -650,13 +601,11 @@ function updateCardPreview() {
   document.getElementById('previewNarration').innerText = card.narration;
 }
 
-// 3. Sliders & Presets
 function onSliderChange(asset, value) {
   userIsEditing = true;
   let targetVal = Math.max(0, Math.min(100, parseInt(value, 10) || 0));
 
-  const assetKeys = ['sukuk', 'saham', 'rdpu', 'emas', 'campuran'];
-  const otherKeys = assetKeys.filter(k => k !== asset);
+  const otherKeys = ASSET_KEYS.filter(k => k !== asset);
   const otherSum = otherKeys.reduce((sum, k) => sum + (allocation[k] || 0), 0);
   const total = targetVal + otherSum;
 
@@ -695,24 +644,23 @@ function onSliderChange(asset, value) {
 
 function autoBalanceAllocation() {
   userIsEditing = true;
-  const assetKeys = ['sukuk', 'saham', 'rdpu', 'emas', 'campuran'];
-  const currentSum = assetKeys.reduce((s, k) => s + (allocation[k] || 0), 0);
+  const currentSum = ASSET_KEYS.reduce((s, k) => s + (allocation[k] || 0), 0);
 
   if (currentSum === 100) return;
 
   if (currentSum === 0) {
-    allocation = { sukuk: 20, saham: 20, rdpu: 20, emas: 20, campuran: 20 };
+    allocation = { ...DEFAULT_ALLOCATION };
   } else {
     let scaled = {};
     let newSum = 0;
-    assetKeys.forEach(k => {
+    ASSET_KEYS.forEach(k => {
       scaled[k] = Math.round((allocation[k] / currentSum) * 100);
       newSum += scaled[k];
     });
 
     let diff = 100 - newSum;
     if (diff !== 0) {
-      const maxKey = assetKeys.reduce((max, k) => scaled[k] > scaled[max] ? k : max, assetKeys[0]);
+      const maxKey = ASSET_KEYS.reduce((max, k) => scaled[k] > scaled[max] ? k : max, ASSET_KEYS[0]);
       scaled[maxKey] += diff;
     }
     allocation = scaled;
@@ -727,53 +675,61 @@ function autoBalanceAllocation() {
 }
 
 function checkTotalSum() {
-  const sum = allocation.sukuk + allocation.saham + allocation.rdpu + allocation.emas + allocation.campuran;
+  const sum = ASSET_KEYS.reduce((s, k) => s + (allocation[k] || 0), 0);
   const sumBadge = document.getElementById('sumBadge');
   const btnSubmit = document.getElementById('btnSubmitAllocation');
   const btnAutoBalance = document.getElementById('btnAutoBalance');
   if (!sumBadge) return;
 
   sumBadge.innerText = `Total: ${sum}%`;
+  const inputAllowed = Boolean(gameState && gameState.stage_input_open && gameState.status !== 'GAME_FINISHED');
 
   if (sum === 100) {
-    sumBadge.className = 'px-3.5 py-1.5 rounded-button font-mono text-sm font-semibold tabular border bg-obsidian text-white border-chalk shadow-sm';
+    sumBadge.className = 'px-3.5 py-2 rounded-button font-mono text-sm tabular border bg-obsidian text-white border-chalk';
     if (btnAutoBalance) btnAutoBalance.classList.add('hidden');
-    if (gameState && gameState.stage_input_open && btnSubmit) {
-      btnSubmit.disabled = false;
+    if (btnSubmit) {
+      btnSubmit.disabled = submitInFlight || !inputAllowed;
     }
   } else {
-    sumBadge.className = 'px-3.5 py-1.5 rounded-button font-mono text-sm font-semibold tabular border bg-obsidian text-loss border-loss shadow-sm';
+    sumBadge.className = 'px-3.5 py-2 rounded-button font-mono text-sm tabular border bg-obsidian text-loss border-loss';
     if (btnAutoBalance) {
       btnAutoBalance.classList.remove('hidden');
-      if (sum < 100) {
-        btnAutoBalance.innerText = `⚡ Seimbangkan 100% (+${100 - sum}%)`;
-      } else {
-        btnAutoBalance.innerText = `⚡ Seimbangkan 100%`;
-      }
+      btnAutoBalance.innerText = sum < 100 ? `Seimbangkan (+${100 - sum}%)` : 'Seimbangkan 100%';
     }
     if (btnSubmit) btnSubmit.disabled = true;
   }
 }
 
+function syncPresetPressedState() {
+  for (const { id, alloc } of Object.values(PRESETS)) {
+    const btn = document.getElementById(id);
+    if (!btn) continue;
+    const match = ASSET_KEYS.every(k => allocation[k] === alloc[k]);
+    btn.setAttribute('aria-pressed', match ? 'true' : 'false');
+    btn.classList.toggle('bg-chalk', match);
+    btn.classList.toggle('text-obsidian', match);
+    btn.classList.toggle('bg-obsidian', !match);
+    btn.classList.toggle('text-smoke', !match);
+    btn.classList.toggle('hover:text-chalk', !match);
+    btn.classList.toggle('hover:bg-carbon', !match);
+  }
+}
+
 function syncSliders() {
-  ['sukuk', 'saham', 'rdpu', 'emas', 'campuran'].forEach(asset => {
+  ASSET_KEYS.forEach(asset => {
     const el = document.getElementById(`range${capitalize(asset)}`);
     const valEl = document.getElementById(`val${capitalize(asset)}`);
     if (el) el.value = allocation[asset];
     if (valEl) valEl.innerText = `${allocation[asset]}%`;
   });
+  syncPresetPressedState();
   checkTotalSum();
 }
 
 function applyPreset(type) {
+  if (!PRESETS[type]) return;
   userIsEditing = true;
-  if (type === 'rata') {
-    allocation = { sukuk: 20, saham: 20, rdpu: 20, emas: 20, campuran: 20 };
-  } else if (type === 'konservatif') {
-    allocation = { sukuk: 50, saham: 10, rdpu: 25, emas: 10, campuran: 5 };
-  } else if (type === 'agresif') {
-    allocation = { sukuk: 10, saham: 60, rdpu: 10, emas: 10, campuran: 10 };
-  }
+  allocation = { ...PRESETS[type].alloc };
   if (navigator.vibrate) {
     try { navigator.vibrate(12); } catch (e) {}
   }
@@ -782,9 +738,9 @@ function applyPreset(type) {
 
 async function handleAllocationSubmit(e) {
   e.preventDefault();
-  if (!gameState || !currentUser) return;
+  if (!gameState || !currentUser || submitInFlight) return;
 
-  const sum = allocation.sukuk + allocation.saham + allocation.rdpu + allocation.emas + allocation.campuran;
+  const sum = ASSET_KEYS.reduce((s, k) => s + (allocation[k] || 0), 0);
   if (sum !== 100) {
     showToast(`Total alokasi harus tepat 100% (saat ini ${sum}%)`, 'error');
     return;
@@ -800,17 +756,21 @@ async function handleAllocationSubmit(e) {
   try {
     const res = await fetch('/api/participant/submit', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Participant-Token': getPlayerToken()
+      },
       body: JSON.stringify({
         code: currentUser.code,
         name: currentUser.name,
         stage: gameState.current_stage,
         allocation: allocation,
+        participant_token: getPlayerToken(),
         participant_sync: buildParticipantSync()
       })
     });
     const json = await res.json();
-    if (json.success) {
+    if (res.ok && json.success) {
       if (navigator.vibrate) {
         try { navigator.vibrate([15, 50, 20]); } catch (e) {}
       }
@@ -820,8 +780,9 @@ async function handleAllocationSubmit(e) {
       savedAllocations[stageKey] = { ...allocation };
       savedAllocTs[stageKey] = json.participant?.alloc_ts?.[stageKey] || Math.max((savedAllocTs[stageKey] || 0) + 1, Date.now());
       persistSavedAllocations();
+      setPlayerSyncError(null);
       applyPlayerSyncResponse(json.state, json.participant, true);
-    } else if (json.session_expired) {
+    } else if (json.session_expired || res.status === 401) {
       forceRelogin(null);
     } else {
       showToast(json.error || 'Gagal menyimpan alokasi', 'error');
@@ -830,8 +791,7 @@ async function handleAllocationSubmit(e) {
     showToast('Koneksi server gagal: ' + err.message, 'error');
   } finally {
     submitInFlight = false;
-    btn.disabled = false;
-    btn.innerText = 'Simpan Alokasi Tahap Ini ↗';
+    btn.innerText = 'Simpan Alokasi Tahap Ini';
     checkTotalSum();
   }
 }
@@ -860,6 +820,35 @@ window.addEventListener('DOMContentLoaded', () => {
     if (!document.hidden && currentUser) {
       fetchStateAndParticipant();
       schedulePlayerPoll();
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closePlayerModal();
+      return;
+    }
+    if (e.key === 'Tab') {
+      const modal = document.getElementById('modalConfirmPlayer');
+      if (!modal || modal.classList.contains('hidden')) return;
+      const focusables = modal.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    const modal = document.getElementById('modalConfirmPlayer');
+    if (modal && e.target === modal) {
+      closePlayerModal();
     }
   });
 });
