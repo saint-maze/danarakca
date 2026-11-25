@@ -528,6 +528,8 @@ function updateParticipantUI() {
   }
 }
 
+let lastAllocBannerKey = '';
+
 function updateStageInputStatus() {
   if (!gameState) return;
   const banner = document.getElementById('allocationBanner');
@@ -535,36 +537,40 @@ function updateStageInputStatus() {
   const currentStage = Number(gameState.current_stage) || 1;
   const isFinished = gameState.status === 'GAME_FINISHED';
   const isEditable = !isFinished && Boolean(gameState.stage_input_open);
+  const bannerKey = `${isFinished}:${isEditable}:${currentStage}`;
 
-  let borderCls = '';
-  let dotCls = 'bg-smoke';
-  let titleCls = 'text-ash';
-  let titleText = 'Sesi Alokasi Ditutup';
-  let descText = 'Putaran sedang berlangsung. Menunggu arahan fasilitator.';
+  if (banner && bannerKey !== lastAllocBannerKey) {
+    lastAllocBannerKey = bannerKey;
+    let borderCls = '';
+    let dotCls = 'bg-smoke';
+    let titleCls = 'text-ash';
+    let titleText = 'Sesi Alokasi Ditutup';
+    let descText = 'Putaran sedang berlangsung. Menunggu arahan fasilitator.';
 
-  if (isFinished) {
-    borderCls = 'border-pulse/30';
-    dotCls = 'bg-pulse';
-    titleCls = 'text-pulse';
-    titleText = 'Simulasi Selesai';
-    descText = 'Seluruh putaran telah usai. Cek pengumuman pemenang di layar proyektor booth.';
-  } else if (isEditable) {
-    dotCls = 'bg-pulse';
-    titleCls = 'text-chalk';
-    titleText = `Sesi Alokasi Tahap ${currentStage} Terbuka`;
-    descText = 'Silakan sesuaikan alokasi portofolio tim lalu simpan.';
-  }
+    if (isFinished) {
+      borderCls = 'border-pulse/30';
+      dotCls = 'bg-pulse';
+      titleCls = 'text-pulse';
+      titleText = 'Simulasi Selesai';
+      descText = 'Seluruh putaran telah usai. Cek pengumuman pemenang di layar proyektor booth.';
+    } else if (isEditable) {
+      dotCls = 'bg-pulse';
+      titleCls = 'text-chalk';
+      titleText = `Sesi Alokasi Tahap ${currentStage} Terbuka`;
+      descText = 'Silakan sesuaikan alokasi portofolio tim lalu simpan.';
+    }
 
-  banner.className = `p-3.5 rounded-card hairline bg-carbon text-caption flex items-center justify-between gap-3 ${borderCls}`.trim();
-  banner.innerHTML = `
-    <div class="flex items-center gap-3">
-      <span class="w-1.5 h-1.5 rounded-full ${dotCls} shrink-0"></span>
-      <div>
-        <div class="${titleCls} font-mono text-[12px]">${titleText}</div>
-        <div class="text-smoke text-[11px]">${descText}</div>
+    banner.className = `p-3.5 rounded-card hairline bg-carbon text-caption flex items-center justify-between gap-3 ${borderCls}`.trim();
+    banner.innerHTML = `
+      <div class="flex items-center gap-3">
+        <span class="w-1.5 h-1.5 rounded-full ${dotCls} shrink-0"></span>
+        <div>
+          <div class="${titleCls} font-mono text-[12px]">${titleText}</div>
+          <div class="text-smoke text-[11px]">${descText}</div>
+        </div>
       </div>
-    </div>
-  `;
+    `;
+  }
   presetsGroup.classList.toggle('opacity-40', !isEditable);
   presetsGroup.classList.toggle('pointer-events-none', !isEditable);
   enableSliders(isEditable);

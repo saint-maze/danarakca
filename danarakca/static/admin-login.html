@@ -60,7 +60,7 @@
         <form id="adminLoginForm" onsubmit="handleAdminLogin(event)" class="space-y-5">
           <div>
             <label for="username" class="block meta mb-2">ID Admin</label>
-            <input type="text" id="username" name="username" required autocomplete="username"
+            <input type="text" id="username" name="username" required autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"
               placeholder="Masukkan ID admin..." class="field font-mono">
           </div>
 
@@ -97,7 +97,24 @@
   </footer>
 
   <script>
+    function setLoginError(message) {
+      const alertBox = document.getElementById('errorAlert');
+      const alertText = document.getElementById('errorAlertText');
+      if (!alertBox) return;
+      if (message) {
+        if (alertText) alertText.innerText = message;
+        alertBox.classList.remove('hidden');
+      } else {
+        alertBox.classList.add('hidden');
+      }
+    }
+
     (async function checkExistingAuth() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('session_expired') === '1') {
+        setLoginError('Sesi admin tidak valid atau telah berakhir. Silakan login kembali.');
+      }
+
       const token = localStorage.getItem('danarakca_admin_token');
       if (!token) return;
 
@@ -105,9 +122,11 @@
         const res = await fetch('/api/admin/verify', {
           headers: { 'X-Admin-Token': token }
         });
-        const data = await res.json();
-        if (data.success && data.authenticated) {
+        const data = (await res.json().catch(() => ({}))) || {};
+        if (res.ok && data.success && data.authenticated) {
           window.location.href = 'facilitator.html';
+        } else if (res.status === 401 || res.status === 403) {
+          localStorage.removeItem('danarakca_admin_token');
         }
       } catch (err) {
         console.error('Verification error:', err);
@@ -128,10 +147,8 @@
       const user = document.getElementById('username').value.trim();
       const pass = document.getElementById('password').value.trim();
       const btn = document.getElementById('submitBtn');
-      const alertBox = document.getElementById('errorAlert');
-      const alertText = document.getElementById('errorAlertText');
 
-      alertBox.classList.add('hidden');
+      setLoginError(null);
       btn.disabled = true;
       btn.innerText = 'Memverifikasi...';
 
@@ -141,18 +158,16 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: user, password: pass })
         });
-        const json = await res.json();
+        const json = (await res.json().catch(() => ({}))) || {};
 
-        if (json.success && json.token) {
+        if (res.ok && json.success && json.token) {
           localStorage.setItem('danarakca_admin_token', json.token);
           window.location.href = 'facilitator.html';
         } else {
-          alertText.innerText = json.error || 'ID atau Password salah.';
-          alertBox.classList.remove('hidden');
+          setLoginError(json.error || `Gagal masuk (status ${res.status}).`);
         }
       } catch (err) {
-        alertText.innerText = 'Gagal menghubungi server: ' + err.message;
-        alertBox.classList.remove('hidden');
+        setLoginError('Gagal menghubungi server: ' + err.message);
       } finally {
         btn.disabled = false;
         btn.innerText = 'Masuk ke Portal Admin';

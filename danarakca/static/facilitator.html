@@ -136,17 +136,17 @@
           <span class="text-[10px] font-mono uppercase tracking-wider text-smoke hidden sm:inline pl-1">Durasi:</span>
           <div role="group" aria-label="Mode durasi tahap"
             class="grid grid-cols-3 sm:inline-flex w-full sm:w-auto min-h-[44px] rounded-button hairline-ui divide-x divide-graphite bg-obsidian text-caption font-mono shrink-0">
-            <button type="button" onclick="setGameMode(1)" id="btnMode1" data-action-btn="1" aria-pressed="false"
+            <button type="button" onclick="setGameMode(1)" id="btnMode1" data-action-btn="1" aria-pressed="false" disabled
               class="min-h-[44px] px-2.5 sm:px-3 flex items-center justify-center transition-colors cursor-pointer text-smoke hover:text-chalk text-xs sm:text-caption first:rounded-l-[7px] last:rounded-r-[7px] focus-visible:relative focus-visible:z-10"
               title="Mode Booth Cepat (1 Tahap / 10 Putaran)">
               1 Tahap
             </button>
-            <button type="button" onclick="setGameMode(2)" id="btnMode2" data-action-btn="1" aria-pressed="false"
+            <button type="button" onclick="setGameMode(2)" id="btnMode2" data-action-btn="1" aria-pressed="false" disabled
               class="min-h-[44px] px-2.5 sm:px-3 flex items-center justify-center transition-colors cursor-pointer text-smoke hover:text-chalk text-xs sm:text-caption first:rounded-l-[7px] last:rounded-r-[7px] focus-visible:relative focus-visible:z-10"
               title="Mode Booth Sedang (2 Tahap / 20 Putaran)">
               2 Tahap
             </button>
-            <button type="button" onclick="setGameMode(3)" id="btnMode3" data-action-btn="1" aria-pressed="true"
+            <button type="button" onclick="setGameMode(3)" id="btnMode3" data-action-btn="1" aria-pressed="true" disabled
               class="min-h-[44px] px-2.5 sm:px-3 flex items-center justify-center transition-colors cursor-pointer bg-chalk text-obsidian text-xs sm:text-caption first:rounded-l-[7px] last:rounded-r-[7px] focus-visible:relative focus-visible:z-10"
               title="Mode Standar Penuh (3 Tahap / 30 Putaran)">
               3 Tahap
@@ -162,7 +162,7 @@
             title="Tampilkan QR Peserta">
             QR Peserta
           </button>
-          <button type="button" onclick="seedMockUsers(200)" data-action-btn="1"
+          <button type="button" onclick="seedMockUsers(200)" data-action-btn="1" disabled
             class="min-h-[44px] px-3 flex items-center justify-center rounded-button hairline-ui bg-obsidian text-smoke hover:text-chalk hover:bg-carbon transition-colors cursor-pointer text-center text-xs"
             title="Isi 200 Bot Simulasi">
             Simulasi Peserta
@@ -172,7 +172,7 @@
             title="Unduh Rekap CSV">
             Unduh CSV
           </button>
-          <button type="button" onclick="confirmReset()" data-action-btn="1"
+          <button type="button" onclick="confirmReset()" data-action-btn="1" disabled
             class="min-h-[44px] px-3 flex items-center justify-center rounded-button hairline-ui bg-obsidian text-loss hover:bg-loss/10 transition-colors cursor-pointer text-center text-xs"
             title="Reset Sesi Game">
             Reset Game
@@ -186,7 +186,7 @@
             title="Tampilkan QR Peserta">
             QR Peserta
           </button>
-          <button type="button" onclick="seedMockUsers(200)" data-action-btn="1"
+          <button type="button" onclick="seedMockUsers(200)" data-action-btn="1" disabled
             class="min-h-[44px] px-4 flex items-center justify-center text-smoke hover:text-chalk hover:bg-carbon transition-colors cursor-pointer focus-visible:relative focus-visible:z-10"
             title="Isi 200 Bot Simulasi">
             Simulasi Peserta
@@ -196,7 +196,7 @@
             title="Unduh Rekap CSV">
             Unduh CSV
           </button>
-          <button type="button" onclick="confirmReset()" data-action-btn="1"
+          <button type="button" onclick="confirmReset()" data-action-btn="1" disabled
             class="min-h-[44px] px-4 flex items-center justify-center text-loss hover:bg-loss/10 transition-colors cursor-pointer last:rounded-r-[7px] focus-visible:relative focus-visible:z-10"
             title="Reset Sesi Game">
             Reset Game
@@ -423,7 +423,7 @@
         </div>
         <div class="flex items-center gap-2">
           <input type="text" id="inputPlayerUrl" oninput="onPlayerUrlChange()"
-            class="field flex-1 font-mono text-xs"
+            class="field flex-1 min-w-0 font-mono text-xs"
             placeholder="https://domain-anda.com/player.html">
           <button type="button" onclick="copyPlayerUrl()"
             class="btn-ghost text-caption px-4 whitespace-nowrap cursor-pointer" id="btnCopyUrl">
@@ -471,7 +471,7 @@
   <div id="toastContainer" aria-live="polite"
     class="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-sm z-50 flex flex-col gap-2 pointer-events-none"></div>
 
-  <script src="facilitator.js?v=2.4"></script>
+  <script src="facilitator.js?v=2.5"></script>
 </body>
 
 </html>

@@ -77,6 +77,7 @@ class DanarakcaSecurityAndEngineTests(unittest.TestCase):
         self._orig_engine = server.engine
         self._orig_env = {k: os.environ.get(k) for k in (
             'DANARAKCA_ADMIN_USER',
+            'DANARAKCA_ADMIN_USERNAME',
             'DANARAKCA_ADMIN_PASSWORD',
             'DANARAKCA_ADMIN_PASSWORD_HASH',
             'DANARAKCA_ADMIN_SECRET',
@@ -84,6 +85,7 @@ class DanarakcaSecurityAndEngineTests(unittest.TestCase):
             'VERCEL',
         )}
         os.environ['DANARAKCA_ADMIN_USER'] = 'admin_test'
+        os.environ.pop('DANARAKCA_ADMIN_USERNAME', None)
         os.environ['DANARAKCA_ADMIN_PASSWORD'] = 's3cret_test_pw'
         os.environ['DANARAKCA_ADMIN_SECRET'] = 'test_hmac_secret_value_12345'
         os.environ.pop('DANARAKCA_ADMIN_PASSWORD_HASH', None)
@@ -456,6 +458,95 @@ class DanarakcaSecurityAndEngineTests(unittest.TestCase):
         pub = self.engine.get_public_state()
         self.assertNotIn('admin', pub['config'])
         self.assertEqual(pub['config']['max_drawdown_award'], 0.05)
+
+    def test_vercel_admin_auth_resilience_and_body_parsing(self):
+        # 1. Cross-container token stability on VERCEL=1 even when DANARAKCA_ADMIN_SECRET is unset
+        os.environ['VERCEL'] = '1'
+        os.environ.pop('DANARAKCA_ADMIN_SECRET', None)
+        os.environ.pop('DANARAKCA_ADMIN_USER', None)
+        os.environ['DANARAKCA_ADMIN_USERNAME'] = ' "Admin" '
+        salt = b'fedcba9876543210'
+        digest = hashlib.pbkdf2_hmac('sha256', b'VercelPass!26', salt, 10000).hex()
+        # Hash mistakenly placed into DANARAKCA_ADMIN_PASSWORD should still verify cleanly
+        os.environ['DANARAKCA_ADMIN_PASSWORD'] = f"pbkdf2_sha256$10000${salt.hex()}${digest}"
+
+        # Wrong password casing still rejected
+        st_wrong_pw, _, _ = dispatch_request(
+            server.DanarakcaRequestHandler,
+            'POST',
+            '/api/admin/login',
+            body={'username': 'admin', 'password': 'vercelpass!26'},
+        )
+        self.assertEqual(st_wrong_pw, 401)
+
+        # Case-insensitive username succeeds and verifies after simulated container cold start
+        st_ok, _, body_ok = dispatch_request(
+            server.DanarakcaRequestHandler,
+            'POST',
+            '/api/admin/login',
+            body={'username': 'admin', 'password': 'VercelPass!26'},
+        )
+        self.assertEqual(st_ok, 200)
+        token = json.loads(body_ok.decode('utf-8'))['token']
+
+        orig_runtime_secret = server._RUNTIME_ADMIN_SECRET
+        server._RUNTIME_ADMIN_SECRET = 'completely_different_container_secret'
+        try:
+            st_verify, _, verify_body = dispatch_request(
+                server.DanarakcaRequestHandler,
+                'GET',
+                '/api/admin/verify',
+                headers={'X-Admin-Token': token},
+            )
+            self.assertEqual(st_verify, 200)
+            self.assertTrue(json.loads(verify_body.decode('utf-8'))['authenticated'])
+        finally:
+            server._RUNTIME_ADMIN_SECRET = orig_runtime_secret
+
+        # Rotating admin password invalidates previously derived cross-instance tokens
+        os.environ['DANARAKCA_ADMIN_PASSWORD'] = 'DifferentPass!99'
+        st_verify_after_pw_change, _, _ = dispatch_request(
+            server.DanarakcaRequestHandler,
+            'GET',
+            '/api/admin/verify',
+            headers={'X-Admin-Token': token},
+        )
+        self.assertEqual(st_verify_after_pw_change, 401)
+
+        # 2. parse_json_body supports chunked transfer encoding & BytesIO without Content-Length
+        mock_h = server.DanarakcaRequestHandler.__new__(server.DanarakcaRequestHandler)
+        mock_h.headers = {'transfer-encoding': 'chunked'}
+        payload_bytes = json.dumps({'username': 'Admin', 'password': 'DifferentPass!99'}).encode('utf-8')
+        chunked_wire = f"{len(payload_bytes):x}\r\n".encode('ascii') + payload_bytes + b"\r\n0\r\n\r\n"
+        mock_h.rfile = io.BytesIO(chunked_wire)
+        self.assertEqual(mock_h.parse_json_body()['password'], 'DifferentPass!99')
+
+        mock_h.headers = {'content-type': 'application/json'}
+        mock_h.rfile = io.BytesIO(payload_bytes)
+        self.assertEqual(mock_h.parse_json_body()['username'], 'Admin')
+
+        # Truncated chunked payload raises ValueError cleanly (no partial truncation acceptance)
+        mock_h.headers = {'transfer-encoding': 'chunked'}
+        mock_h.rfile = io.BytesIO(b"5\r\nhello")
+        with self.assertRaises(ValueError):
+            mock_h.parse_json_body()
+
+        # 3. Participant signing key is isolated from admin password oracle on VERCEL=1 & local dev
+        self.assertNotEqual(server.get_participant_secret(), server.get_admin_secret())
+        st_reg, _, reg_body = dispatch_request(
+            server.DanarakcaRequestHandler,
+            'POST',
+            '/api/participant/register',
+            body={'name': 'OracleCheckTeam'},
+        )
+        self.assertEqual(st_reg, 200)
+        p_tok = json.loads(reg_body.decode('utf-8'))['participant_token']
+        self.assertIsNone(server._verify_signed_payload(p_tok))
+
+        # Local non-VERCEL mode without Redis / DANARAKCA_ADMIN_SECRET uses ephemeral runtime admin secret
+        os.environ.pop('VERCEL', None)
+        if not getattr(server.engine, 'redis_token', ''):
+            self.assertEqual(server.get_admin_secret(), server._RUNTIME_ADMIN_SECRET)
 
     def test_concurrent_readers_and_writers_thread_safety(self):
         self.engine.seed_mock_participants(40)

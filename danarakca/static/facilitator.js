@@ -214,6 +214,12 @@ function getAdminToken() {
   return localStorage.getItem('danarakca_admin_token') || '';
 }
 
+function handleExpiredAdminSession(withToast = true) {
+  localStorage.removeItem('danarakca_admin_token');
+  if (withToast) showToast('Sesi fasilitator berakhir', 'error');
+  window.location.href = 'admin-login.html?session_expired=1';
+}
+
 async function verifyAdminAuth() {
   const token = getAdminToken();
   if (!token) {
@@ -224,10 +230,16 @@ async function verifyAdminAuth() {
     const res = await fetch('/api/admin/verify', {
       headers: { 'X-Admin-Token': token }
     });
+    if (res.status === 401 || res.status === 403) {
+      handleExpiredAdminSession(false);
+      return false;
+    }
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
     const json = await res.json();
-    if (!res.ok || !json.success || !json.authenticated) {
-      localStorage.removeItem('danarakca_admin_token');
-      window.location.href = 'admin-login.html';
+    if (!json.success || !json.authenticated) {
+      handleExpiredAdminSession(false);
       return false;
     }
     setSyncError(null);
@@ -252,16 +264,17 @@ let facilitatorInitialized = false;
 let retryInFlight = false;
 
 async function retryFacilitatorInit() {
-  if (retryInFlight || facilitatorInitialized) return;
+  if (retryInFlight) return;
   retryInFlight = true;
   try {
     setSyncError(null);
-    const isAuthed = await verifyAdminAuth();
-    if (!isAuthed) return;
-    facilitatorInitialized = true;
-    setActionButtonsDisabled(actionInFlight || drawCooldown);
-    if (!chartTopPlayers || !chartAssetIndexes) initCharts();
-    initFacilitatorRealtimeStream();
+    if (!facilitatorInitialized) {
+      const isAuthed = await verifyAdminAuth();
+      if (!isAuthed) return;
+      facilitatorInitialized = true;
+      if (!chartTopPlayers || !chartAssetIndexes) initCharts();
+      initFacilitatorRealtimeStream();
+    }
     await fetchState();
     scheduleFacilitatorPoll();
   } finally {
@@ -836,14 +849,13 @@ async function postFacilitatorAction(url, payload, fallbackError, { delayUnlockM
       },
       body: JSON.stringify(payload)
     });
-    const json = await res.json();
+    if (res.status === 401 || res.status === 403) {
+      handleExpiredAdminSession();
+      return null;
+    }
+    const json = await res.json().catch(() => ({}));
     if (res.ok && json.success) {
       return json;
-    }
-    if (res.status === 403) {
-      showToast('Sesi fasilitator berakhir', 'error');
-      window.location.href = 'admin-login.html';
-      return null;
     }
     showToast(json.error || fallbackError, 'error');
     return null;
@@ -1034,9 +1046,8 @@ async function exportCSV() {
       headers: { 'X-Admin-Token': getAdminToken() }
     });
     if (!res.ok) {
-      if (res.status === 403) {
-        showToast('Sesi fasilitator berakhir', 'error');
-        window.location.href = 'admin-login.html';
+      if (res.status === 401 || res.status === 403) {
+        handleExpiredAdminSession();
         return;
       }
       const errJson = await res.json().catch(() => ({}));
@@ -1267,13 +1278,5 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  const isAuthed = await verifyAdminAuth();
-  if (!isAuthed) return;
-
-  facilitatorInitialized = true;
-  initCharts();
-  initFacilitatorRealtimeStream();
-  await fetchState();
-
-  scheduleFacilitatorPoll();
+  await retryFacilitatorInit();
 });

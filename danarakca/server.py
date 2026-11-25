@@ -26,11 +26,91 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 engine = GameEngine(DATA_DIR)
 
 _RUNTIME_ADMIN_SECRET = secrets.token_hex(32)
+_RUNTIME_PLAYER_SECRET = secrets.token_hex(32)
 _RUNTIME_DEV_PASSWORD = secrets.token_urlsafe(12)
+_DERIVED_ADMIN_KEY_CACHE = None
+
+
+def _get_header(headers, name, default=''):
+    if not headers:
+        return default
+    val = headers.get(name)
+    if val is not None:
+        return val
+    target = name.lower()
+    for k, v in headers.items():
+        if str(k).lower() == target:
+            return v
+    return default
+
+
+def _parse_pbkdf2_hash(val):
+    if not isinstance(val, str):
+        return None
+    parts = val.split('$')
+    if len(parts) != 4 or parts[0] != 'pbkdf2_sha256':
+        return None
+    if any(any(ch.isspace() for ch in part) for part in (parts[1], parts[2], parts[3])):
+        return None
+    try:
+        iterations = int(parts[1])
+        salt = bytes.fromhex(parts[2])
+        digest = bytes.fromhex(parts[3])
+    except ValueError:
+        return None
+    if iterations <= 0 or not salt or len(digest) != 32:
+        return None
+    return iterations, salt, parts[3].lower()
+
+
+def _is_pbkdf2_hash(val):
+    return _parse_pbkdf2_hash(val) is not None
+
+
+def _same_username(provided, expected):
+    return hmac.compare_digest(
+        str(provided).strip().casefold().encode('utf-8'),
+        str(expected).strip().casefold().encode('utf-8'),
+    )
+
+
+def _normalize_username_env(raw_val):
+    val = (raw_val or '').strip()
+    if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
+        val = val[1:-1].strip()
+    return val
 
 
 def get_admin_secret():
-    return os.environ.get('DANARAKCA_ADMIN_SECRET', '').strip() or _RUNTIME_ADMIN_SECRET
+    explicit = os.environ.get('DANARAKCA_ADMIN_SECRET', '').strip()
+    if explicit:
+        return explicit
+    redis_tok = getattr(engine, 'redis_token', '') or ''
+    if os.environ.get('VERCEL') == '1' or redis_tok:
+        expected_u, expected_secret, _ = get_admin_credentials()
+        if expected_secret is not None:
+            if redis_tok:
+                material = f"{expected_u.casefold()}\x00{expected_secret}\x00{redis_tok}".encode('utf-8')
+                return hmac.new(b'danarakca-admin-token-v1', material, hashlib.sha256).hexdigest()
+            # Stretch cross-instance key on VERCEL=1 without Redis; never shared with player tokens
+            global _DERIVED_ADMIN_KEY_CACHE
+            material = f"{expected_u.casefold()}\x00{expected_secret}".encode('utf-8')
+            digest_tag = hashlib.sha256(material).digest()
+            if _DERIVED_ADMIN_KEY_CACHE is None or _DERIVED_ADMIN_KEY_CACHE[0] != digest_tag:
+                derived = hashlib.pbkdf2_hmac('sha256', material, b'danarakca-admin-kdf-v1', 100000).hex()
+                _DERIVED_ADMIN_KEY_CACHE = (digest_tag, derived)
+            return _DERIVED_ADMIN_KEY_CACHE[1]
+    return _RUNTIME_ADMIN_SECRET
+
+
+def get_participant_secret():
+    explicit = os.environ.get('DANARAKCA_ADMIN_SECRET', '').strip()
+    if explicit:
+        return hmac.new(b'danarakca-player-token-v1', explicit.encode('utf-8'), hashlib.sha256).hexdigest()
+    redis_tok = getattr(engine, 'redis_token', '') or ''
+    if redis_tok:
+        return hmac.new(b'danarakca-player-redis-v1', redis_tok.encode('utf-8'), hashlib.sha256).hexdigest()
+    return _RUNTIME_PLAYER_SECRET
 
 
 def get_token_ttl():
@@ -42,16 +122,22 @@ def get_token_ttl():
 
 
 def get_admin_credentials():
-    expected_u = (os.environ.get('DANARAKCA_ADMIN_USER') or 'admin').strip()
+    expected_u = (
+        _normalize_username_env(os.environ.get('DANARAKCA_ADMIN_USER'))
+        or _normalize_username_env(os.environ.get('DANARAKCA_ADMIN_USERNAME'))
+        or 'admin'
+    )
     env_hash = os.environ.get('DANARAKCA_ADMIN_PASSWORD_HASH', '').strip()
-    if env_hash:
-        return str(expected_u), env_hash, True
+    if env_hash and _is_pbkdf2_hash(env_hash):
+        return expected_u, env_hash, True
     env_pw = os.environ.get('DANARAKCA_ADMIN_PASSWORD', '').strip()
     if env_pw:
-        return str(expected_u), env_pw, False
+        return expected_u, env_pw, _is_pbkdf2_hash(env_pw)
+    if env_hash:
+        return expected_u, env_hash, True
     if os.environ.get('VERCEL') == '1':
-        return str(expected_u), None, False
-    return str(expected_u), _RUNTIME_DEV_PASSWORD, False
+        return expected_u, None, False
+    return expected_u, _RUNTIME_DEV_PASSWORD, False
 
 
 def is_using_ephemeral_dev_password():
@@ -67,19 +153,14 @@ def verify_admin_password(password_input):
     if expected_secret is None:
         return False
     pw_bytes = str(password_input).encode('utf-8')
-    if is_hash:
-        parts = expected_secret.split('$')
-        if len(parts) != 4 or parts[0] != 'pbkdf2_sha256':
-            return False
-        try:
-            iterations = int(parts[1])
-            salt = bytes.fromhex(parts[2])
-            expected_digest = parts[3]
-        except ValueError:
-            return False
-        computed = hashlib.pbkdf2_hmac('sha256', pw_bytes, salt, iterations).hex()
-        return hmac.compare_digest(computed.encode('utf-8'), expected_digest.encode('utf-8'))
-    return hmac.compare_digest(pw_bytes, expected_secret.encode('utf-8'))
+    if not is_hash:
+        return hmac.compare_digest(pw_bytes, expected_secret.encode('utf-8'))
+    parsed = _parse_pbkdf2_hash(expected_secret)
+    if not parsed:
+        return False
+    iterations, salt, expected_digest = parsed
+    computed = hashlib.pbkdf2_hmac('sha256', pw_bytes, salt, iterations).hex()
+    return hmac.compare_digest(computed.encode('utf-8'), expected_digest.encode('utf-8'))
 
 
 def _b64url_encode(raw_bytes):
@@ -91,29 +172,30 @@ def _b64url_decode(txt):
     return base64.urlsafe_b64decode((txt + pad).encode('ascii'))
 
 
-def _hmac_hex(payload_b64):
+def _hmac_hex(payload_b64, secret_key=None):
+    key = get_admin_secret() if secret_key is None else secret_key
     return hmac.new(
-        get_admin_secret().encode('utf-8'),
+        key.encode('utf-8'),
         payload_b64.encode('ascii'),
         hashlib.sha256
     ).hexdigest()
 
 
-def _sign_payload(payload_dict):
+def _sign_payload(payload_dict, secret_key=None):
     payload_b64 = _b64url_encode(
         json.dumps(payload_dict, separators=(',', ':'), sort_keys=True).encode('utf-8')
     )
-    return f"{payload_b64}.{_hmac_hex(payload_b64)}"
+    return f"{payload_b64}.{_hmac_hex(payload_b64, secret_key=secret_key)}"
 
 
-def _verify_signed_payload(token_str):
+def _verify_signed_payload(token_str, secret_key=None):
     if not token_str or not isinstance(token_str, str) or '.' not in token_str:
         return None
     parts = token_str.strip().split('.', 1)
     if len(parts) != 2 or not parts[0] or not parts[1]:
         return None
     payload_b64, sig = parts
-    expected_sig = _hmac_hex(payload_b64)
+    expected_sig = _hmac_hex(payload_b64, secret_key=secret_key)
     if not hmac.compare_digest(sig.encode('utf-8'), expected_sig.encode('utf-8')):
         return None
     try:
@@ -138,9 +220,9 @@ def check_admin_token(headers):
     expected_u, expected_secret, _ = get_admin_credentials()
     if expected_secret is None:
         return False
-    token = headers.get('X-Admin-Token', '')
+    token = _get_header(headers, 'X-Admin-Token', '')
     if not token:
-        auth = headers.get('Authorization', '')
+        auth = _get_header(headers, 'Authorization', '')
         if auth.startswith('Bearer '):
             token = auth[7:]
     payload = _verify_signed_payload(token)
@@ -151,8 +233,7 @@ def check_admin_token(headers):
             return False
     except (TypeError, ValueError):
         return False
-    token_u = str(payload.get('u', ''))
-    return hmac.compare_digest(token_u.encode('utf-8'), expected_u.encode('utf-8'))
+    return _same_username(payload.get('u', ''), expected_u)
 
 
 def make_participant_token(session_id, code, name, joined_at, nonce):
@@ -164,14 +245,14 @@ def make_participant_token(session_id, code, name, joined_at, nonce):
         'j': int(joined_at or 0),
         'k': str(nonce or ''),
         'iat': int(time.time())
-    })
+    }, secret_key=get_participant_secret())
 
 
 def extract_participant_token(headers, body=None):
-    token = headers.get('X-Participant-Token', '') if headers else ''
+    token = _get_header(headers, 'X-Participant-Token', '')
     if not token and isinstance(body, dict):
         token = body.get('participant_token', '')
-    payload = _verify_signed_payload(token)
+    payload = _verify_signed_payload(token, secret_key=get_participant_secret())
     if not payload or payload.get('t') != 'player':
         return None
     return payload
@@ -221,7 +302,7 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def _client_ip(self):
         if os.environ.get('VERCEL') == '1' or os.environ.get('DANARAKCA_TRUST_PROXY') == '1':
-            fwd = self.headers.get('X-Forwarded-For', '')
+            fwd = _get_header(self.headers, 'X-Forwarded-For', '')
             if fwd:
                 return fwd.split(',')[0].strip() or 'unknown'
         return self.client_address[0] if getattr(self, 'client_address', None) else 'unknown'
@@ -234,7 +315,7 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         if path in ('/api', '/api/', '/api/index.py'):
-            fwd = self.headers.get('x-forwarded-uri') or self.headers.get('x-real-path')
+            fwd = _get_header(self.headers, 'x-forwarded-uri', '') or _get_header(self.headers, 'x-real-path', '')
             if fwd:
                 fwd_parsed = urllib.parse.urlparse(fwd)
                 if fwd_parsed.path.startswith('/api'):
@@ -287,17 +368,86 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
     def send_error_json(self, message, status=400):
         self.send_json({'error': message, 'success': False}, status=status)
 
-    def parse_json_body(self):
-        raw_len = self.headers.get('Content-Length', '0')
+    def _read_chunked_body(self):
+        chunks = []
+        total = 0
+        framing = 0
+        max_chunk_line = 4096
+        max_framing = 16384
+        while True:
+            line = self.rfile.readline(max_chunk_line)
+            if not line:
+                raise ValueError("Payload chunked terpotong")
+            if not line.endswith(b'\n'):
+                raise ValueError("Header chunked terlalu panjang")
+            framing += len(line)
+            if framing > max_framing:
+                raise ValueError("Overhead framing chunked melebihi batas")
+            size_str = line.split(b';', 1)[0].strip()
+            if not size_str:
+                raise ValueError("Encoding chunked tidak valid")
+            try:
+                chunk_size = int(size_str, 16)
+            except ValueError:
+                raise ValueError("Encoding chunked tidak valid")
+            if chunk_size == 0:
+                while True:
+                    trailer = self.rfile.readline(max_chunk_line)
+                    if not trailer:
+                        raise ValueError("Payload chunked terpotong")
+                    if not trailer.endswith(b'\n'):
+                        raise ValueError("Header chunked terlalu panjang")
+                    framing += len(trailer)
+                    if framing > max_framing:
+                        raise ValueError("Overhead framing chunked melebihi batas")
+                    if trailer in (b'\r\n', b'\n'):
+                        break
+                break
+            if chunk_size < 0 or total + chunk_size > MAX_BODY_BYTES:
+                raise ValueError("Ukuran payload melebihi batas maksimum")
+            data = self.rfile.read(chunk_size)
+            if len(data) < chunk_size:
+                raise ValueError("Payload chunked terpotong")
+            chunks.append(data)
+            total += len(data)
+            crlf = self.rfile.readline(4)
+            if crlf not in (b'\r\n', b'\n'):
+                raise ValueError("Encoding chunked tidak valid")
+        return b''.join(chunks)
+
+    def _read_body_bytes(self):
+        te = str(_get_header(self.headers, 'Transfer-Encoding', '')).lower()
+        if 'chunked' in te:
+            return self._read_chunked_body()
+
+        raw_len = _get_header(self.headers, 'Content-Length', None)
+        if raw_len is None or str(raw_len).strip() == '':
+            if not isinstance(self.rfile, io.BytesIO):
+                return b''
+            raw_bytes = self.rfile.read(MAX_BODY_BYTES + 1)
+            if len(raw_bytes) > MAX_BODY_BYTES:
+                raise ValueError("Ukuran payload melebihi batas maksimum")
+            return raw_bytes
+
         try:
-            content_length = int(raw_len)
+            content_length = int(str(raw_len).strip())
         except (TypeError, ValueError):
             raise ValueError("Header Content-Length tidak valid")
-        if content_length <= 0:
-            return {}
+        if content_length < 0:
+            raise ValueError("Header Content-Length tidak valid")
+        if content_length == 0:
+            return b''
         if content_length > MAX_BODY_BYTES:
             raise ValueError("Ukuran payload melebihi batas maksimum")
-        raw_body = self.rfile.read(content_length).decode('utf-8')
+        return self.rfile.read(content_length)
+
+    def parse_json_body(self):
+        raw_bytes = self._read_body_bytes()
+        if not raw_bytes:
+            return {}
+        raw_body = raw_bytes.decode('utf-8')
+        if not raw_body.strip():
+            return {}
         parsed = json.loads(raw_body)
         return parsed if isinstance(parsed, dict) else {}
 
@@ -337,7 +487,7 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
             path = parsed.path
             query = urllib.parse.parse_qs(parsed.query)
 
-            if path.startswith('/api/'):
+            if path.startswith('/api/') and not path.startswith('/api/admin/'):
                 engine.refresh_state(force=('bust' in query))
 
             if path == '/api/state':
@@ -413,7 +563,7 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
             path = parsed.path
             client_ip = self._client_ip()
 
-            if path.startswith('/api/'):
+            if path.startswith('/api/') and not path.startswith('/api/admin/'):
                 is_write = path in (
                     '/api/state/sync',
                     '/api/player/sync',
@@ -446,7 +596,7 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
                     verified_p_sync['_token_joined_at'] = int(p_token.get('j', 0) or 0)
                     verified_p_sync['_token_name'] = p_token.get('n', req_name)
 
-            if path.startswith('/api/') and path != '/api/facilitator/reset' and (client_sync or verified_p_sync):
+            if path.startswith('/api/') and not path.startswith('/api/admin/') and path != '/api/facilitator/reset' and (client_sync or verified_p_sync):
                 engine.sync_state(client_sync=client_sync, participant_sync=verified_p_sync)
 
             if path == '/api/admin/login':
@@ -455,9 +605,9 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
                 expected_u, expected_secret, _ = get_admin_credentials()
                 if expected_secret is None:
                     return self.send_error_json('Kredensial admin belum dikonfigurasi di server.', 503)
-                u = str(body.get('username', '')).strip()
-                p = str(body.get('password', '')).strip()
-                if hmac.compare_digest(u.encode('utf-8'), expected_u.encode('utf-8')) and verify_admin_password(p):
+                user_ok = _same_username(body.get('username') or '', expected_u)
+                pass_ok = verify_admin_password(str(body.get('password') or '').strip())
+                if user_ok and pass_ok:
                     token = make_admin_token(expected_u)
                     return self.send_json({'success': True, 'token': token, 'message': 'Login Fasilitator Berhasil!'})
                 return self.send_error_json('ID atau Password Fasilitator salah!', 401)
