@@ -51,7 +51,7 @@
     <div id="playerSyncError" role="alert" aria-live="polite"
       class="hidden mb-4 p-3.5 rounded-card hairline bg-carbon text-loss text-caption flex flex-wrap items-center justify-between gap-3">
       <span id="playerSyncErrorText">Gagal menyinkronkan data dengan server.</span>
-      <button type="button" onclick="fetchStateAndParticipant()" class="btn-ghost text-caption px-4">
+      <button type="button" onclick="fetchStateAndParticipant({ urgent: true, bust: true, retryBtn: this })" class="btn-ghost text-caption px-4">
         Coba Lagi
       </button>
     </div>
@@ -102,7 +102,7 @@
           </div>
 
           <!-- Total Asset Value -->
-          <div class="text-heading sm:text-heading-lg text-chalk tracking-tight mb-2 tabular font-mono"
+          <div class="text-heading-sm sm:text-heading-lg text-chalk tracking-tight mb-2 tabular font-mono"
             id="displayTotalAsset">
             Memuat...
           </div>
@@ -285,7 +285,7 @@
   <div id="toastContainerPlayer" aria-live="polite"
     class="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-sm z-50 flex flex-col gap-2 pointer-events-none"></div>
 
-  <script src="player.js?v=2.5"></script>
+  <script src="player.js?v=2.7"></script>
 </body>
 
 </html>

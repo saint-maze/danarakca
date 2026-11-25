@@ -129,7 +129,7 @@
     <div id="broadcastSyncError" role="alert" aria-live="polite"
       class="hidden p-3.5 rounded-card hairline bg-carbon text-loss text-caption flex flex-wrap items-center justify-between gap-3">
       <span id="broadcastSyncErrorText">Gagal terhubung ke server simulasi.</span>
-      <button type="button" onclick="fetchState(true)" class="btn-ghost text-caption px-4">
+      <button type="button" onclick="fetchState({ urgent: true, bust: true, forceApply: true, retryBtn: this })" class="btn-ghost text-caption px-4">
         Coba Lagi
       </button>
     </div>
@@ -328,7 +328,7 @@
           <span class="font-mono text-xs text-smoke">Nilai Portofolio</span>
         </div>
         <div class="h-64 sm:h-72 w-full relative">
-          <canvas id="chartTopPlayers"></canvas>
+          <canvas id="chartTopPlayers" role="img" aria-label="Grafik pertumbuhan nilai aset 5 peserta teratas"></canvas>
           <div id="chartTopEmpty" class="absolute inset-0 flex items-center justify-center text-caption text-smoke font-mono pointer-events-none text-center px-4">
             Menunggu putaran pertama dimulai...
           </div>
@@ -344,7 +344,7 @@
           <span class="font-mono text-xs text-smoke">Basis 100</span>
         </div>
         <div class="h-64 sm:h-72 w-full relative">
-          <canvas id="chartAssetIndexes"></canvas>
+          <canvas id="chartAssetIndexes" role="img" aria-label="Grafik pergerakan indeks 5 kelas aset"></canvas>
           <div id="chartAssetEmpty" class="hidden absolute inset-0 flex items-center justify-center text-caption text-smoke font-mono pointer-events-none text-center px-4">
             Grafik indeks aset tidak tersedia (pustaka grafik gagal dimuat).
           </div>
@@ -377,7 +377,7 @@
     </div>
   </div>
 
-  <script src="broadcast.js?v=2.4"></script>
+  <script src="broadcast.js?v=2.7"></script>
 </body>
 
 </html>

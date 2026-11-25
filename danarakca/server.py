@@ -189,12 +189,14 @@ def _sign_payload(payload_dict, secret_key=None):
 
 
 def _verify_signed_payload(token_str, secret_key=None):
-    if not token_str or not isinstance(token_str, str) or '.' not in token_str:
+    if not isinstance(token_str, str):
         return None
-    parts = token_str.strip().split('.', 1)
-    if len(parts) != 2 or not parts[0] or not parts[1]:
+    token_str = token_str.strip()
+    if not token_str or '.' not in token_str or not token_str.isascii():
         return None
-    payload_b64, sig = parts
+    payload_b64, sig = token_str.split('.', 1)
+    if not payload_b64 or not sig:
+        return None
     expected_sig = _hmac_hex(payload_b64, secret_key=secret_key)
     if not hmac.compare_digest(sig.encode('utf-8'), expected_sig.encode('utf-8')):
         return None
@@ -357,13 +359,16 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
 
-    def send_json(self, data, status=200):
-        body = json.dumps(data, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    def send_raw_json(self, body, status=200):
         self.send_response(status)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def send_json(self, data, status=200):
+        body = json.dumps(data, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+        self.send_raw_json(body, status=status)
 
     def send_error_json(self, message, status=400):
         self.send_json({'error': message, 'success': False}, status=status)
@@ -488,10 +493,14 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
             query = urllib.parse.parse_qs(parsed.query)
 
             if path.startswith('/api/') and not path.startswith('/api/admin/'):
-                engine.refresh_state(force=('bust' in query))
+                engine.refresh_state(
+                    force=('bust' in query),
+                    min_version=engine._safe_int(query.get('min_version', ['0'])[0]),
+                    min_round=engine._safe_int(query.get('min_round', ['0'])[0]),
+                )
 
             if path == '/api/state':
-                return self.send_json({'success': True, 'data': engine.get_public_state()})
+                return self.send_raw_json(engine.get_public_state_response_bytes(view='broadcast'))
 
             elif path == '/api/leaderboard':
                 raw_limit = query.get('limit', ['100'])
@@ -557,31 +566,46 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self.send_error_json(str(e), 500)
 
+    _POST_RATE_LIMITS = {
+        '/api/admin/login': ('admin_login', 10, 'Terlalu banyak percobaan login. Coba lagi sebentar.'),
+        '/api/state/sync': ('state_sync', 120, 'Batas sinkronisasi tercapai. Coba lagi sebentar.'),
+        '/api/participant/register': ('participant_register', 30, 'Terlalu banyak permintaan pendaftaran. Coba lagi sebentar.'),
+    }
+    _MUTATION_PATHS = frozenset({
+        '/api/facilitator/draw-card',
+        '/api/facilitator/toggle-input',
+        '/api/facilitator/next-stage',
+        '/api/facilitator/set-mode',
+        '/api/facilitator/reset',
+        '/api/facilitator/seed-mock-users',
+        '/api/participant/submit',
+        '/api/participant/register',
+    })
+
     def do_POST(self):
         try:
             parsed = self.get_effective_path()
             path = parsed.path
             client_ip = self._client_ip()
 
-            if path.startswith('/api/') and not path.startswith('/api/admin/'):
-                is_write = path in (
-                    '/api/state/sync',
-                    '/api/player/sync',
-                    '/api/facilitator/draw-card',
-                    '/api/facilitator/toggle-input',
-                    '/api/facilitator/next-stage',
-                    '/api/facilitator/set-mode',
-                    '/api/facilitator/reset',
-                    '/api/facilitator/seed-mock-users',
-                    '/api/participant/submit',
-                    '/api/participant/register'
-                )
-                engine.refresh_state(force=is_write)
+            rl_rule = self._POST_RATE_LIMITS.get(path)
+            if rl_rule:
+                bucket, max_hits, err_msg = rl_rule
+                if not rate_limiter.allow((client_ip, bucket), max_hits=max_hits, window_sec=60.0):
+                    return self.send_error_json(err_msg, 429)
 
             body = self.parse_json_body()
+            p_token = extract_participant_token(self.headers, body)
+
+            if path.startswith('/api/') and not path.startswith('/api/admin/'):
+                engine.refresh_state(
+                    force=(path in self._MUTATION_PATHS or bool(body.get('bust'))),
+                    min_version=engine._safe_int(body.get('min_version')),
+                    min_round=engine._safe_int(body.get('min_round')),
+                    min_session=engine._safe_int(p_token.get('sid')) if p_token else 0,
+                )
 
             is_admin = check_admin_token(self.headers)
-            p_token = extract_participant_token(self.headers, body)
             client_sync = body.get('client_sync') if is_admin else None
             raw_p_sync = body.get('participant_sync') if isinstance(body.get('participant_sync'), dict) else None
             verified_p_sync = None
@@ -600,8 +624,6 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
                 engine.sync_state(client_sync=client_sync, participant_sync=verified_p_sync)
 
             if path == '/api/admin/login':
-                if not rate_limiter.allow((client_ip, 'admin_login'), max_hits=10, window_sec=60.0):
-                    return self.send_error_json('Terlalu banyak percobaan login. Coba lagi sebentar.', 429)
                 expected_u, expected_secret, _ = get_admin_credentials()
                 if expected_secret is None:
                     return self.send_error_json('Kredensial admin belum dikonfigurasi di server.', 503)
@@ -613,69 +635,35 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
                 return self.send_error_json('ID atau Password Fasilitator salah!', 401)
 
             elif path == '/api/state/sync':
-                if not rate_limiter.allow((client_ip, 'state_sync'), max_hits=120, window_sec=60.0):
-                    return self.send_error_json('Batas sinkronisasi tercapai. Coba lagi sebentar.', 429)
-                return self.send_json({'success': True, 'data': engine.get_public_state()})
+                return self.send_raw_json(engine.get_public_state_response_bytes(view='facilitator' if is_admin else 'broadcast'))
 
             elif path == '/api/player/sync':
                 p_info = body.get('participant_sync') if isinstance(body.get('participant_sync'), dict) else {}
-                name = ''
-                code = ''
-                token_sid = 0
-                token_nonce = ''
-                if p_token:
-                    name = engine.sanitize_name(p_token.get('n') or p_info.get('name') or body.get('name') or '')
-                    code = str(p_token.get('c') or '').upper()
-                    token_sid = int(p_token.get('sid', 0) or 0)
-                    token_nonce = str(p_token.get('k', '') or '')
-                if not p_token or not name or engine.is_participant_session_expired(name, token_sid, token_nonce=token_nonce):
+                name = engine.sanitize_name(p_token.get('n') or p_info.get('name') or body.get('name') or '') if p_token else ''
+                sync_res = engine.sync_player_session(name=name, token_payload=p_token)
+                if sync_res['session_expired']:
                     return self.send_json({
                         'success': True,
                         'data': {
-                            'state': engine.get_public_state(),
+                            'state': sync_res['state'],
                             'participant': None,
-                            'session_expired': True
+                            'session_expired': True,
                         }
                     })
-                p = engine.register_participant(
-                    name=name,
-                    code=code,
-                    token_payload=p_token,
-                    allow_existing=True
-                )
-                pub_state = engine.get_public_state()
-                refreshed_token = None
-                cur_sess = int(pub_state.get('session_id', 1))
-                if p and token_sid != cur_sess:
-                    refreshed_token = make_participant_token(
-                        cur_sess, p['code'], p['name'], p.get('joined_at', 0), engine.get_participant_nonce(p['code'])
-                    )
-                resp_data = {
-                    'state': pub_state,
-                    'participant': p
-                }
-                if refreshed_token:
-                    resp_data['participant_token'] = refreshed_token
+                resp_data = {'state': sync_res['state'], 'participant': sync_res['participant']}
+                if sync_res['token_meta']:
+                    resp_data['participant_token'] = make_participant_token(*sync_res['token_meta'])
                 return self.send_json({'success': True, 'data': resp_data})
 
             elif path == '/api/participant/register':
-                if not rate_limiter.allow((client_ip, 'participant_register'), max_hits=30, window_sec=60.0):
-                    return self.send_error_json('Terlalu banyak permintaan pendaftaran. Coba lagi sebentar.', 429)
                 name = engine.sanitize_name(body.get('name') or '')
                 if not name:
                     return self.send_error_json('Nama peserta / tim tidak boleh kosong', 400)
                 try:
-                    p = engine.register_participant(name=name, token_payload=p_token)
+                    p, pub_state, token_meta = engine.register_and_snapshot(name=name, token_payload=p_token)
                 except PermissionError as pe:
                     return self.send_error_json(str(pe), 409)
-                pub_state = engine.get_public_state()
-                token = make_participant_token(
-                    pub_state['session_id'],
-                    p['code'],
-                    p['name'],
-                    p.get('joined_at', 0),
-                    engine.get_participant_nonce(p['code'])
-                )
+                token = make_participant_token(*token_meta)
                 return self.send_json({
                     'success': True,
                     'data': p,
@@ -711,20 +699,26 @@ class DanarakcaRequestHandler(http.server.SimpleHTTPRequestHandler):
 
                 stage = body.get('stage')
                 allocation = body.get('allocation')
-                alloc = engine.submit_allocation(
-                    code_or_name,
-                    stage,
-                    allocation,
-                    name=name,
-                    token_payload=p_token,
-                    allow_auto_register=bool(p_token)
-                )
-                p = engine.get_participant_snapshot(code_or_name or name)
+                try:
+                    alloc, p, pub_state = engine.submit_allocation_session(
+                        code_or_name,
+                        stage,
+                        allocation,
+                        name=name,
+                        token_payload=p_token,
+                        allow_auto_register=bool(p_token)
+                    )
+                except PermissionError as pe:
+                    return self.send_json({
+                        'success': False,
+                        'session_expired': True,
+                        'error': str(pe),
+                    }, status=409)
                 return self.send_json({
                     'success': True,
                     'data': alloc,
                     'participant': p,
-                    'state': engine.get_public_state(),
+                    'state': pub_state,
                     'message': 'Alokasi berhasil disimpan!'
                 })
 

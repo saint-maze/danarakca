@@ -212,7 +212,7 @@
     <div id="syncErrorBanner" role="alert" aria-live="polite"
       class="hidden lg:col-span-12 p-4 rounded-card hairline bg-carbon text-loss text-caption flex flex-wrap items-center justify-between gap-3">
       <span id="syncErrorText">Gagal terhubung ke server. Periksa koneksi jaringan Anda.</span>
-      <button type="button" onclick="retryFacilitatorInit()" class="btn-ghost text-caption px-4">
+      <button type="button" onclick="retryFacilitatorInit(this)" class="btn-ghost text-caption px-4">
         Coba Lagi
       </button>
     </div>
@@ -372,7 +372,7 @@
           <h3 class="text-heading-xs text-chalk">Pertumbuhan Aset Top 5 Peserta</h3>
         </div>
         <div class="h-64 relative">
-          <canvas id="chartTopPlayers"></canvas>
+          <canvas id="chartTopPlayers" role="img" aria-label="Grafik pertumbuhan aset 5 peserta teratas"></canvas>
           <div id="chartTopEmpty" class="absolute inset-0 flex items-center justify-center text-caption text-smoke font-mono pointer-events-none text-center px-4">
             Menunggu putaran pertama dimulai...
           </div>
@@ -385,7 +385,7 @@
           <h3 class="text-heading-xs text-chalk">Indeks Kinerja 5 Kelas Aset (Basis = 100)</h3>
         </div>
         <div class="h-64 relative">
-          <canvas id="chartAssetIndexes"></canvas>
+          <canvas id="chartAssetIndexes" role="img" aria-label="Grafik indeks kinerja 5 kelas aset"></canvas>
           <div id="chartAssetEmpty" class="hidden absolute inset-0 flex items-center justify-center text-caption text-smoke font-mono pointer-events-none text-center px-4">
             Grafik indeks tidak tersedia.
           </div>
@@ -471,7 +471,7 @@
   <div id="toastContainer" aria-live="polite"
     class="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-sm z-50 flex flex-col gap-2 pointer-events-none"></div>
 
-  <script src="facilitator.js?v=2.5"></script>
+  <script src="facilitator.js?v=2.7"></script>
 </body>
 
 </html>

@@ -182,6 +182,8 @@ try {
   }
 } catch (e) {}
 
+const BROADCAST_RETRY_EVENTS = new Set(['CARD_DRAWN', 'STAGE_ADVANCED', 'GAME_RESET']);
+
 // Treat external SSE events strictly as wake-up triggers to fetch authoritative server state
 function handleBroadcastLiveEvent(msg, sentAtSec) {
   if (!msg || !msg.event) return;
@@ -193,16 +195,30 @@ function handleBroadcastLiveEvent(msg, sentAtSec) {
     lastLeaderboardHash = '';
     lastChartsHash = '';
   }
-  fetchState(true);
+  const minRound = Number(msg.current_round || msg.round) || 0;
+  const minVersion = Number(msg.state_version) || 0;
+  fetchState({
+    urgent: true,
+    minRound,
+    minVersion,
+    bust: !minRound && !minVersion,
+    forceApply: msg.event === 'GAME_RESET',
+    retryOnBehind: BROADCAST_RETRY_EVENTS.has(msg.event),
+    retryCount: 0,
+  });
 }
+
+let lastBroadcastSseAttemptAt = 0;
 
 function initRealtimeStream() {
   const channel = (gameState && gameState.live_channel) || LIVE_CHANNEL;
+  if (broadcastEventSource && broadcastEventSource.readyState !== EventSource.CLOSED) return;
   if (broadcastEventSource) {
     try { broadcastEventSource.close(); } catch (e) {}
   }
   sseActive = false;
   sseErrors = 0;
+  lastBroadcastSseAttemptAt = Date.now();
 
   try {
     broadcastEventSource = new EventSource(`https://ntfy.sh/${channel}/sse?since=now`);
@@ -218,7 +234,7 @@ function initRealtimeStream() {
         const msg = typeof raw.message === 'string' ? JSON.parse(raw.message) : raw.message;
         handleBroadcastLiveEvent(msg, raw.time);
       } catch (err) {
-        fetchState(true);
+        fetchState({ urgent: true, bust: true });
       }
     };
     broadcastEventSource.onerror = () => {
@@ -245,7 +261,7 @@ function applyIncomingState(newState, force = false) {
     const curVer = gameState.state_version || 0;
     const newVer = newState.state_version || 0;
 
-    if (!force && newSess < curSess) return;
+    if (newSess < curSess) return;
 
     if (!force && newSess === curSess) {
       const curRound = gameState.current_round || 0;
@@ -276,34 +292,81 @@ function applyIncomingState(newState, force = false) {
 }
 
 let fetchInFlight = false;
+let broadcastFetchSeq = 0;
+let latestBroadcastSeq = 0;
+let broadcastRetryTimeout = null;
 
-async function fetchState(bust = false) {
-  if (fetchInFlight && !bust) return;
+async function fetchState(arg = false) {
+  const opts = typeof arg === 'object' && arg !== null
+    ? arg
+    : { urgent: Boolean(arg), bust: Boolean(arg) };
+  if (fetchInFlight && !opts.urgent) return;
+  if (broadcastRetryTimeout && opts.urgent) {
+    clearTimeout(broadcastRetryTimeout);
+    broadcastRetryTimeout = null;
+  }
+
+  const retryBtn = opts.retryBtn || null;
+  if (retryBtn) {
+    retryBtn.disabled = true;
+    retryBtn.dataset.prevText = retryBtn.innerText;
+    retryBtn.innerText = 'Mencoba...';
+  }
+  const mySeq = ++broadcastFetchSeq;
   fetchInFlight = true;
   try {
-    const url = bust ? '/api/state?bust=1' : '/api/state';
+    const qs = new URLSearchParams();
+    if (opts.bust) qs.set('bust', '1');
+    if (opts.minRound) qs.set('min_round', String(opts.minRound));
+    if (opts.minVersion) qs.set('min_version', String(opts.minVersion));
+    const query = qs.toString();
+    const url = query ? `/api/state?${query}` : '/api/state';
     const res = await fetch(url, { cache: 'no-store' });
     const json = await res.json();
-    if (res.ok && json.success && json.data) {
-      applyIncomingState(json.data, bust);
-    } else if (!res.ok) {
+    if (mySeq < latestBroadcastSeq) return;
+    latestBroadcastSeq = mySeq;
+
+    if (!res.ok || !json.success || !json.data) {
       setBroadcastError(json.error || 'Gagal memuat data simulasi dari server.');
+      return;
+    }
+
+    applyIncomingState(json.data, Boolean(opts.forceApply));
+    if (opts.urgent) scheduleBroadcastPoll();
+
+    const retryCount = Number(opts.retryCount) || 0;
+    const stillBehind = (opts.minRound > 0 && (json.data.current_round || 0) < opts.minRound)
+      || (opts.minVersion > 0 && (json.data.state_version || 0) < opts.minVersion);
+    if (opts.retryOnBehind && stillBehind && retryCount < 2) {
+      broadcastRetryTimeout = setTimeout(() => {
+        fetchState({ ...opts, retryBtn: null, urgent: true, bust: true, retryCount: retryCount + 1 });
+      }, retryCount === 0 ? 300 : 600);
     }
   } catch (err) {
+    if (mySeq < latestBroadcastSeq) return;
     setElementText('syncStatusText', 'Menghubungkan...');
     setBroadcastError('Koneksi ke server simulasi terputus. Mencoba menyambung kembali...');
   } finally {
-    fetchInFlight = false;
+    if (retryBtn) {
+      retryBtn.disabled = false;
+      retryBtn.innerText = retryBtn.dataset.prevText || 'Coba Lagi';
+    }
+    if (mySeq >= broadcastFetchSeq) {
+      fetchInFlight = false;
+    }
   }
 }
 
 function scheduleBroadcastPoll() {
   if (broadcastPollTimeout) clearTimeout(broadcastPollTimeout);
-  const baseInterval = sseActive ? 3500 : 1800;
-  const jitter = Math.floor(Math.random() * 500);
+  const baseInterval = sseActive ? 3000 : 1000;
+  const jitter = Math.floor(Math.random() * 350);
 
   broadcastPollTimeout = setTimeout(async () => {
     if (!document.hidden) {
+      if ((!broadcastEventSource || broadcastEventSource.readyState === EventSource.CLOSED) && (Date.now() - lastBroadcastSseAttemptAt) > 15000) {
+        initRealtimeStream();
+      }
       await fetchState();
     }
     scheduleBroadcastPoll();
@@ -718,7 +781,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
-      fetchState();
+      if (!broadcastEventSource || broadcastEventSource.readyState === EventSource.CLOSED) initRealtimeStream();
+      fetchState({ urgent: true, bust: true });
       scheduleBroadcastPoll();
     }
   });

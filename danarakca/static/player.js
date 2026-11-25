@@ -61,29 +61,48 @@ function isStaleRealtimeEvent(msg, sentAtSec) {
   return Boolean(msgSess && curSess && msgSess !== curSess);
 }
 
+const URGENT_LIVE_EVENTS = new Set([
+  'CARD_DRAWN',
+  'STAGE_ADVANCED',
+  'GAME_RESET',
+  'STAGE_INPUT_TOGGLED',
+  'MODE_CHANGED',
+]);
+
 // Treat external SSE events strictly as a wake-up signal to fetch authoritative server state
 function handleRealtimeEvent(msg, sentAtSec) {
-  if (!msg || !msg.event) return;
-  if (isStaleRealtimeEvent(msg, sentAtSec)) return;
+  if (!msg || !msg.event || isStaleRealtimeEvent(msg, sentAtSec)) return;
 
   if (msg.event === 'CARD_DRAWN' && navigator.vibrate) {
     try { navigator.vibrate([25, 40, 25]); } catch (e) {}
   }
-  fetchStateAndParticipant();
+  const minRound = Number(msg.current_round || msg.round) || 0;
+  const minVersion = Number(msg.state_version) || 0;
+  fetchStateAndParticipant({
+    urgent: true,
+    minRound,
+    minVersion,
+    bust: !minRound && !minVersion,
+    forceApply: msg.event === 'GAME_RESET',
+    retryOnBehind: URGENT_LIVE_EVENTS.has(msg.event),
+    retryCount: 0,
+  });
 }
 
 let sseErrorCount = 0;
 let isSseActive = false;
+let lastSseAttemptAt = 0;
 
 function initRealtimeStream(channel) {
   const targetChannel = channel || (gameState && gameState.live_channel) || LIVE_CHANNEL;
-  if (liveEventSource && currentLiveChannel === targetChannel) return;
+  if (liveEventSource && currentLiveChannel === targetChannel && liveEventSource.readyState !== EventSource.CLOSED) return;
   if (liveEventSource) {
     try { liveEventSource.close(); } catch (e) {}
   }
   currentLiveChannel = targetChannel;
   sseErrorCount = 0;
   isSseActive = false;
+  lastSseAttemptAt = Date.now();
 
   try {
     liveEventSource = new EventSource(`https://ntfy.sh/${targetChannel}/sse?since=now`);
@@ -98,7 +117,7 @@ function initRealtimeStream(channel) {
         const msg = typeof raw.message === 'string' ? JSON.parse(raw.message) : raw.message;
         handleRealtimeEvent(msg, raw.time);
       } catch (err) {
-        fetchStateAndParticipant();
+        fetchStateAndParticipant({ urgent: true, bust: true });
       }
     };
     liveEventSource.onerror = () => {
@@ -222,7 +241,7 @@ function showDashboard() {
   if (teamEl) teamEl.innerText = currentUser.name;
 
   syncPresetPressedState();
-  fetchStateAndParticipant();
+  fetchStateAndParticipant({ urgent: true });
 }
 
 async function handleLogin(e) {
@@ -323,12 +342,18 @@ function clearPlayerSession() {
   localStorage.removeItem('danarakca_alloc_ts');
   localStorage.removeItem('danarakca_session_id');
   currentUser = null;
+  gameState = null;
   participantData = null;
   savedAllocations = {};
   savedAllocTs = {};
   allocation = { ...DEFAULT_ALLOCATION };
   userIsEditing = false;
   lastLoadedStage = null;
+  lastAllocBannerKey = '';
+  if (behindRetryTimeout) {
+    clearTimeout(behindRetryTimeout);
+    behindRetryTimeout = null;
+  }
 }
 
 // Facilitator reset without keeping participants: send player cleanly back to login
@@ -351,7 +376,7 @@ function applyPlayerSyncResponse(newState, newParticipant, force = false) {
     const curVer = gameState ? (gameState.state_version || 0) : 0;
     const newVer = newState.state_version || 0;
 
-    if (!force && curSess > 0 && newSess < curSess) return;
+    if (curSess > 0 && newSess < curSess) return;
 
     if (curSess > 0 && newSess !== curSess) {
       savedAllocations = {};
@@ -421,42 +446,107 @@ function applyPlayerSyncResponse(newState, newParticipant, force = false) {
   }
 }
 
-async function fetchStateAndParticipant() {
+let syncInFlight = false;
+let syncSeq = 0;
+let latestAppliedSyncSeq = 0;
+let behindRetryTimeout = null;
+
+async function fetchStateAndParticipant(opts = {}) {
   if (!currentUser || submitInFlight) return;
+  if (syncInFlight && !opts.urgent) return;
+  if (behindRetryTimeout && opts.urgent) {
+    clearTimeout(behindRetryTimeout);
+    behindRetryTimeout = null;
+  }
+
   const sentName = currentUser.name;
+  const retryBtn = opts.retryBtn || null;
+  if (retryBtn) {
+    retryBtn.disabled = true;
+    retryBtn.dataset.prevText = retryBtn.innerText;
+    retryBtn.innerText = 'Mencoba...';
+  }
+  const mySeq = ++syncSeq;
+  syncInFlight = true;
 
   try {
+    const token = getPlayerToken();
+    const payload = {
+      name: currentUser.name,
+      code: currentUser.code,
+      participant_token: token,
+      participant_sync: buildParticipantSync()
+    };
+    if (opts.minRound) payload.min_round = opts.minRound;
+    if (opts.minVersion) payload.min_version = opts.minVersion;
+    if (opts.bust) payload.bust = true;
+
     const res = await fetch('/api/player/sync', {
       method: 'POST',
+      cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
-        'X-Participant-Token': getPlayerToken()
+        'X-Participant-Token': token
       },
-      body: JSON.stringify({
-        name: currentUser.name,
-        code: currentUser.code,
-        participant_token: getPlayerToken(),
-        participant_sync: buildParticipantSync()
-      })
+      body: JSON.stringify(payload)
     });
     const json = await res.json();
     if (!currentUser || currentUser.name !== sentName) return;
+    if (mySeq < latestAppliedSyncSeq) return;
+    latestAppliedSyncSeq = mySeq;
+
     if (json.success && json.data && json.data.session_expired) {
       forceRelogin(json.data.state);
       return;
     }
-    if (res.ok && json.success && json.data && !submitInFlight) {
-      if (json.data.participant_token) {
-        localStorage.setItem('danarakca_player_token', json.data.participant_token);
-      }
-      setPlayerSyncError(null);
-      applyPlayerSyncResponse(json.data.state, json.data.participant, false);
-    } else if (!res.ok || !json.success) {
+    if (!res.ok || !json.success) {
       setPlayerSyncError(json.error || 'Gagal menyinkronkan data dengan server.');
+      return;
+    }
+    if (!json.data || submitInFlight) return;
+
+    const prevSavedSess = parseInt(localStorage.getItem('danarakca_session_id') || '0', 10);
+    const activeSess = gameState ? (gameState.session_id || prevSavedSess) : prevSavedSess;
+    const incomingSess = (json.data.state && json.data.state.session_id) || 0;
+    const acceptsSession = !activeSess || (incomingSess > 0 && incomingSess >= activeSess);
+    if (json.data.participant_token && acceptsSession) {
+      localStorage.setItem('danarakca_player_token', json.data.participant_token);
+    }
+    setPlayerSyncError(null);
+    applyPlayerSyncResponse(json.data.state, json.data.participant, Boolean(opts.forceApply));
+    if (opts.urgent) schedulePlayerPoll();
+
+    const serverState = json.data.state || {};
+    const retryCount = Number(opts.retryCount) || 0;
+    const stillBehind = (opts.minRound > 0 && (serverState.current_round || 0) < opts.minRound)
+      || (opts.minVersion > 0 && (serverState.state_version || 0) < opts.minVersion);
+    if (opts.retryOnBehind && stillBehind && retryCount < 2) {
+      behindRetryTimeout = setTimeout(() => {
+        fetchStateAndParticipant({ ...opts, retryBtn: null, urgent: true, bust: true, retryCount: retryCount + 1 });
+      }, retryCount === 0 ? 300 : 600);
     }
   } catch (err) {
+    if (!currentUser || currentUser.name !== sentName) return;
+    if (mySeq < latestAppliedSyncSeq) return;
     console.error('Error syncing participant data:', err);
     setPlayerSyncError('Koneksi ke server terputus. Coba lagi sebentar.');
+  } finally {
+    if (retryBtn) {
+      retryBtn.disabled = false;
+      retryBtn.innerText = retryBtn.dataset.prevText || 'Coba Lagi';
+    }
+    if (mySeq >= syncSeq) {
+      syncInFlight = false;
+    }
+  }
+}
+
+function setElementText(id, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const str = String(text ?? '');
+  if (el.innerText !== str) {
+    el.innerText = str;
   }
 }
 
@@ -465,38 +555,38 @@ function updateHeaderRoundInfo() {
   const round = gameState.current_round;
   const total = gameState.total_rounds;
   const stage = gameState.current_stage;
-  document.getElementById('headerRoundInfo').innerText = `Putaran ${round}/${total} · Tahap ${stage}`;
-  document.getElementById('labelCurrentStage').innerText = `Tahap ${stage}`;
+  setElementText('headerRoundInfo', `Putaran ${round}/${total} · Tahap ${stage}`);
+  setElementText('labelCurrentStage', `Tahap ${stage}`);
 }
 
 function updateParticipantUI() {
   if (!participantData || !gameState) return;
 
-  document.getElementById('displayTotalAsset').innerText = formatRupiah(participantData.current_value);
+  setElementText('displayTotalAsset', formatRupiah(participantData.current_value));
 
   const initial = gameState.config.initial_capital;
   const ret = (participantData.current_value / initial) - 1;
   const retEl = document.getElementById('displayReturn');
-  retEl.innerText = formatPercent(ret);
-  if (ret >= 0) {
-    retEl.className = 'font-mono tabular text-pulse';
-  } else {
-    retEl.className = 'font-mono tabular text-loss';
+  const retStr = formatPercent(ret);
+  if (retEl) {
+    if (retEl.innerText !== retStr) retEl.innerText = retStr;
+    const retCls = ret >= 0 ? 'font-mono tabular text-pulse' : 'font-mono tabular text-loss';
+    if (retEl.className !== retCls) retEl.className = retCls;
   }
 
   const mdd = participantData.max_drawdown || 0;
   const mddEl = document.getElementById('displayMaxDd');
-  mddEl.innerText = formatPercent(mdd, false);
-  if (mdd === 0) {
-    mddEl.className = 'font-mono text-smoke tabular';
-  } else if (mdd <= 0.10) {
-    mddEl.className = 'font-mono text-ash tabular';
-  } else {
-    mddEl.className = 'font-mono text-loss tabular';
+  const mddStr = formatPercent(mdd, false);
+  if (mddEl) {
+    if (mddEl.innerText !== mddStr) mddEl.innerText = mddStr;
+    const mddCls = mdd === 0
+      ? 'font-mono text-smoke tabular'
+      : (mdd <= 0.10 ? 'font-mono text-ash tabular' : 'font-mono text-loss tabular');
+    if (mddEl.className !== mddCls) mddEl.className = mddCls;
   }
 
   const totalPart = Math.max(1, gameState.total_participants || 1);
-  document.getElementById('displayRank').innerText = `Peringkat #${participantData.current_rank} / ${totalPart}`;
+  setElementText('displayRank', `Peringkat #${participantData.current_rank} / ${totalPart}`);
 
   const currStage = gameState.current_stage;
   if (lastLoadedStage !== currStage && !userIsEditing) {
@@ -601,10 +691,10 @@ function updateCardPreview() {
   const card = lastCard.card;
 
   preview.classList.remove('hidden');
-  document.getElementById('previewRound').innerText = `Putaran ${lastCard.round} · ${card.id}`;
-  document.getElementById('previewCategory').innerText = card.category;
-  document.getElementById('previewTitle').innerText = card.title;
-  document.getElementById('previewNarration').innerText = card.narration;
+  setElementText('previewRound', `Putaran ${lastCard.round} · ${card.id}`);
+  setElementText('previewCategory', card.category);
+  setElementText('previewTitle', card.title);
+  setElementText('previewNarration', card.narration);
 }
 
 function onSliderChange(asset, value) {
@@ -806,11 +896,14 @@ let playerPollTimeout = null;
 
 function schedulePlayerPoll() {
   if (playerPollTimeout) clearTimeout(playerPollTimeout);
-  const baseInterval = isSseActive ? 5000 : 2400;
-  const jitter = Math.floor(Math.random() * 800);
+  const baseInterval = isSseActive ? 3000 : 1200;
+  const jitter = Math.floor(Math.random() * 400);
 
   playerPollTimeout = setTimeout(async () => {
     if (!document.hidden && currentUser) {
+      if ((!liveEventSource || liveEventSource.readyState === EventSource.CLOSED) && (Date.now() - lastSseAttemptAt) > 15000) {
+        initRealtimeStream();
+      }
       await fetchStateAndParticipant();
     }
     schedulePlayerPoll();
@@ -824,7 +917,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && currentUser) {
-      fetchStateAndParticipant();
+      if (!liveEventSource || liveEventSource.readyState === EventSource.CLOSED) initRealtimeStream();
+      fetchStateAndParticipant({ urgent: true, bust: true });
       schedulePlayerPoll();
     }
   });

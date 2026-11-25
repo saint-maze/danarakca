@@ -33,14 +33,17 @@ function broadcastLivePush(eventType, payload = {}) {
 
 let facilitatorSseActive = false;
 let facilitatorSseErrors = 0;
+let lastFacSseAttemptAt = 0;
 
 function initFacilitatorRealtimeStream() {
   const channel = (gameState && gameState.live_channel) || LIVE_CHANNEL;
+  if (facilitatorEventSource && facilitatorEventSource.readyState !== EventSource.CLOSED) return;
   if (facilitatorEventSource) {
     try { facilitatorEventSource.close(); } catch (e) {}
   }
   facilitatorSseActive = false;
   facilitatorSseErrors = 0;
+  lastFacSseAttemptAt = Date.now();
 
   try {
     facilitatorEventSource = new EventSource(`https://ntfy.sh/${channel}/sse?since=now`);
@@ -49,7 +52,7 @@ function initFacilitatorRealtimeStream() {
       facilitatorSseErrors = 0;
     };
     facilitatorEventSource.onmessage = () => {
-      fetchState();
+      fetchState(true);
     };
     facilitatorEventSource.onerror = () => {
       facilitatorSseErrors++;
@@ -263,9 +266,14 @@ async function verifyAdminAuth() {
 let facilitatorInitialized = false;
 let retryInFlight = false;
 
-async function retryFacilitatorInit() {
+async function retryFacilitatorInit(retryBtn = null) {
   if (retryInFlight) return;
   retryInFlight = true;
+  if (retryBtn) {
+    retryBtn.disabled = true;
+    retryBtn.dataset.prevText = retryBtn.innerText;
+    retryBtn.innerText = 'Mencoba...';
+  }
   try {
     setSyncError(null);
     if (!facilitatorInitialized) {
@@ -275,9 +283,13 @@ async function retryFacilitatorInit() {
       if (!chartTopPlayers || !chartAssetIndexes) initCharts();
       initFacilitatorRealtimeStream();
     }
-    await fetchState();
+    await fetchState(true);
     scheduleFacilitatorPoll();
   } finally {
+    if (retryBtn) {
+      retryBtn.disabled = false;
+      retryBtn.innerText = retryBtn.dataset.prevText || 'Coba Lagi';
+    }
     retryInFlight = false;
   }
 }
@@ -444,8 +456,13 @@ function mergeParticipantsSync(existingSync, incomingSync) {
   return merged;
 }
 
+let facFetchInFlight = false;
+let facFetchSeq = 0;
+let latestFacSeq = 0;
+
 function applyIncomingState(newState, force = false) {
   if (!newState) return;
+  latestFacSeq = Math.max(latestFacSeq, facFetchSeq);
   if (gameState) {
     const curSess = gameState.session_id || 0;
     const newSess = newState.session_id || 0;
@@ -504,8 +521,11 @@ function applyIncomingState(newState, force = false) {
   renderUI();
 }
 
-async function fetchState() {
+async function fetchState(urgent = false) {
   if (actionInFlight) return;
+  if (facFetchInFlight && !urgent) return;
+  const mySeq = ++facFetchSeq;
+  facFetchInFlight = true;
   try {
     localStorage.removeItem('danarakca_facilitator_sync');
     const res = await fetch('/api/state/sync', {
@@ -517,14 +537,31 @@ async function fetchState() {
       body: JSON.stringify({ client_sync: buildClientSync() })
     });
     const json = await res.json();
-    if (res.ok && json.success && !actionInFlight) {
+    if (actionInFlight || mySeq < latestFacSeq) return;
+    latestFacSeq = mySeq;
+
+    if (res.ok && json.success && json.data) {
       applyIncomingState(json.data, false);
-    } else if (!res.ok) {
+    } else if (!res.ok || !json.success) {
       setSyncError(json.error || 'Gagal menyinkronkan status permainan.');
     }
   } catch (err) {
+    if (actionInFlight || mySeq < latestFacSeq) return;
     console.error('Error fetching state:', err);
     setSyncError('Koneksi ke server terputus. Mengulang sinkronisasi...');
+  } finally {
+    if (mySeq >= facFetchSeq) {
+      facFetchInFlight = false;
+    }
+  }
+}
+
+function setElementText(id, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const str = String(text ?? '');
+  if (el.innerText !== str) {
+    el.innerText = str;
   }
 }
 
@@ -539,65 +576,58 @@ function renderUI() {
   const round = gameState.current_round;
   const totalRounds = gameState.total_rounds;
 
-  document.getElementById('badgeRound').innerText = `${round} / ${totalRounds}`;
+  setElementText('badgeRound', `${round} / ${totalRounds}`);
 
   if (round === 0) {
-    document.getElementById('badgeSimTime').innerText = 'Tahun 1 · Awal';
+    setElementText('badgeSimTime', 'Tahun 1 · Awal');
   } else {
     const year = Math.ceil(round / 4);
     const qtr = ((round - 1) % 4) + 1;
-    document.getElementById('badgeSimTime').innerText = `Tahun ${year} · Q${qtr}`;
+    setElementText('badgeSimTime', `Tahun ${year} · Q${qtr}`);
   }
 
-  document.getElementById('badgeStage').innerText = `${gameState.current_stage} / ${gameState.total_stages}`;
-  document.getElementById('badgeParticipants').innerText = `${gameState.total_participants}`;
+  setElementText('badgeStage', `${gameState.current_stage} / ${gameState.total_stages}`);
+  setElementText('badgeParticipants', `${gameState.total_participants}`);
 
   const top1 = (gameState.leaderboard_top10 || [])[0];
-  document.getElementById('badgeHighestWealth').innerText = top1 ? formatJuta(top1.current_value) : 'Rp 100,0 Jt';
+  setElementText('badgeHighestWealth', top1 ? formatJuta(top1.current_value) : 'Rp 100,0 Jt');
 
   const nextRound = round + 1;
   const btnDraw = document.getElementById('btnDrawCard');
-  const btnDrawText = document.getElementById('btnDrawCardText');
-
   if (round >= totalRounds) {
     btnDraw.disabled = true;
-    btnDrawText.innerText = 'Permainan Selesai';
+    setElementText('btnDrawCardText', 'Permainan Selesai');
   } else {
     btnDraw.disabled = actionBusy;
-    btnDrawText.innerText = `Kocok Kartu Putaran ${nextRound}`;
+    setElementText('btnDrawCardText', `Kocok Kartu Putaran ${nextRound}`);
   }
 
   // Toggle Input Button (solid token contrast instead of opacity-60)
   const btnToggle = document.getElementById('btnToggleInput');
-  const btnToggleText = document.getElementById('btnToggleInputText');
   if (btnToggle) {
+    const isOpen = Boolean(gameState.stage_input_open);
     btnToggle.disabled = actionBusy;
-    btnToggle.setAttribute('aria-pressed', gameState.stage_input_open ? 'true' : 'false');
-    if (gameState.stage_input_open) {
-      btnToggleText.innerText = 'Input Alokasi: Terbuka';
-      btnToggle.className = 'btn-ghost px-3 sm:px-4 text-caption font-mono text-center justify-center border-chalk text-chalk';
-    } else {
-      btnToggleText.innerText = 'Input Alokasi: Ditutup';
-      btnToggle.className = 'btn-ghost px-3 sm:px-4 text-caption font-mono text-center justify-center border-ui text-smoke';
-    }
+    btnToggle.setAttribute('aria-pressed', isOpen ? 'true' : 'false');
+    setElementText('btnToggleInputText', isOpen ? 'Input Alokasi: Terbuka' : 'Input Alokasi: Ditutup');
+    const toggleCls = `btn-ghost px-3 sm:px-4 text-caption font-mono text-center justify-center ${isOpen ? 'border-chalk text-chalk' : 'border-ui text-smoke'}`;
+    if (btnToggle.className !== toggleCls) btnToggle.className = toggleCls;
   }
 
   const btnNextStage = document.getElementById('btnNextStage');
-  const btnNextStageText = document.getElementById('btnNextStageText');
   const currentStage = gameState.current_stage;
   const roundsPerStage = gameState.rounds_per_stage || 10;
   const stageRoundsFinished = round >= (currentStage * roundsPerStage);
 
   if (currentStage >= gameState.total_stages) {
     btnNextStage.disabled = true;
-    btnNextStageText.innerText = 'Tahap Akhir';
+    setElementText('btnNextStageText', 'Tahap Akhir');
   } else if (!stageRoundsFinished) {
     btnNextStage.disabled = true;
     const roundsInCurrentStage = Math.max(0, round - ((currentStage - 1) * roundsPerStage));
-    btnNextStageText.innerText = `Maju ke Tahap ${currentStage + 1} (${roundsInCurrentStage}/${roundsPerStage} Putaran)`;
+    setElementText('btnNextStageText', `Maju ke Tahap ${currentStage + 1} (${roundsInCurrentStage}/${roundsPerStage} Putaran)`);
   } else {
     btnNextStage.disabled = actionBusy;
-    btnNextStageText.innerText = `Maju ke Tahap ${currentStage + 1}`;
+    setElementText('btnNextStageText', `Maju ke Tahap ${currentStage + 1}`);
   }
 
   updateModeButtonsUI(gameState.total_stages);
@@ -605,10 +635,8 @@ function renderUI() {
   const lastCard = gameState.last_drawn_card;
   const placeholder = document.getElementById('cardPlaceholder');
   const cardContent = document.getElementById('cardContent');
-  const phTitle = document.getElementById('cardPlaceholderTitle');
-  const phDesc = document.getElementById('cardPlaceholderDesc');
-  if (phTitle) phTitle.innerText = 'Belum Ada Kartu yang Dikocok';
-  if (phDesc) phDesc.innerText = 'Peserta dapat mengatur alokasi di ponsel masing-masing. Klik tombol "Kocok Kartu Putaran 1" di atas untuk memicu skenario ekonomi makro.';
+  setElementText('cardPlaceholderTitle', 'Belum Ada Kartu yang Dikocok');
+  setElementText('cardPlaceholderDesc', 'Peserta dapat mengatur alokasi di ponsel masing-masing. Klik tombol "Kocok Kartu Putaran 1" di atas untuk memicu skenario ekonomi makro.');
 
   if (lastCard && lastCard.card) {
     placeholder.classList.add('hidden');
@@ -616,11 +644,11 @@ function renderUI() {
     cardContent.classList.add('flex');
 
     const c = lastCard.card;
-    document.getElementById('cardRoundTag').innerText = `PUTARAN ${lastCard.round} · ${c.id}`;
-    document.getElementById('cardCategoryTag').innerText = c.category;
-    document.getElementById('cardTitle').innerText = c.title;
-    document.getElementById('cardNarration').innerText = c.narration;
-    document.getElementById('cardExplanation').innerText = c.explanation;
+    setElementText('cardRoundTag', `PUTARAN ${lastCard.round} · ${c.id}`);
+    setElementText('cardCategoryTag', c.category);
+    setElementText('cardTitle', c.title);
+    setElementText('cardNarration', c.narration);
+    setElementText('cardExplanation', c.explanation);
 
     const ret = lastCard.returns || {};
     const assets = (gameState.config && gameState.config.assets) || [];
@@ -1207,11 +1235,14 @@ let facilitatorPollTimeout = null;
 
 function scheduleFacilitatorPoll() {
   if (facilitatorPollTimeout) clearTimeout(facilitatorPollTimeout);
-  const baseInterval = facilitatorSseActive ? 3500 : 1800;
-  const jitter = Math.floor(Math.random() * 500);
+  const baseInterval = facilitatorSseActive ? 3000 : 1200;
+  const jitter = Math.floor(Math.random() * 400);
 
   facilitatorPollTimeout = setTimeout(async () => {
     if (!document.hidden && !actionInFlight) {
+      if ((!facilitatorEventSource || facilitatorEventSource.readyState === EventSource.CLOSED) && (Date.now() - lastFacSseAttemptAt) > 15000) {
+        initFacilitatorRealtimeStream();
+      }
       await fetchState();
     }
     scheduleFacilitatorPoll();
@@ -1241,7 +1272,8 @@ window.addEventListener('DOMContentLoaded', async () => {
         retryFacilitatorInit();
         return;
       }
-      fetchState();
+      if (!facilitatorEventSource || facilitatorEventSource.readyState === EventSource.CLOSED) initFacilitatorRealtimeStream();
+      fetchState(true);
       scheduleFacilitatorPoll();
     }
   });

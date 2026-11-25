@@ -548,6 +548,323 @@ class DanarakcaSecurityAndEngineTests(unittest.TestCase):
         if not getattr(server.engine, 'redis_token', ''):
             self.assertEqual(server.get_admin_secret(), server._RUNTIME_ADMIN_SECRET)
 
+    def test_incremental_simulation_matches_full_rebuild(self):
+        self.engine.seed_mock_participants(25)
+        # Round 0 submission with allocation change
+        self.engine.register_participant('Round0Joiner')
+        self.engine.submit_allocation(
+            'Round0Joiner',
+            1,
+            {'sukuk': 70, 'saham': 10, 'rdpu': 10, 'emas': 5, 'campuran': 5},
+        )
+        for _ in range(10):
+            self.engine.draw_card()
+        self.engine.next_stage()
+
+        def _assert_matches_full_rebuild():
+            inc_parts = {
+                c: copy.deepcopy(p) for c, p in self.engine.state['participants'].items()
+            }
+            with self.engine.lock:
+                self.engine._rebuild_simulation()
+            ref_parts = self.engine.state['participants']
+
+            self.assertEqual(set(inc_parts.keys()), set(ref_parts.keys()))
+            for code, inc_p in inc_parts.items():
+                ref_p = ref_parts[code]
+                self.assertAlmostEqual(inc_p['current_value'], ref_p['current_value'], places=6)
+                self.assertAlmostEqual(inc_p['max_drawdown'], ref_p['max_drawdown'], places=6)
+                self.assertEqual(inc_p['current_rank'], ref_p['current_rank'])
+                self.assertEqual(inc_p['prev_rank'], ref_p['prev_rank'])
+                self.assertEqual(len(inc_p['history']), len(ref_p['history']))
+                for h_inc, h_ref in zip(inc_p['history'], ref_p['history']):
+                    self.assertAlmostEqual(h_inc['value'], h_ref['value'], places=6)
+                    self.assertAlmostEqual(h_inc['drawdown'], h_ref['drawdown'], places=6)
+                self.assertEqual(inc_p['history'][-1]['rank'], ref_p['history'][-1]['rank'])
+
+        # Case 1a: Pre-card Stage 2 submission for participant with prior Stage 1 allocation
+        self.engine.submit_allocation(
+            'Round0Joiner',
+            2,
+            {'sukuk': 10, 'saham': 60, 'rdpu': 10, 'emas': 10, 'campuran': 10},
+        )
+        # Case 1b: Pre-card Stage 2 submission by allocation-less Round 10 joiners (tiebreaker flip)
+        self.engine.register_participant('LateA')
+        self.engine.register_participant('LateB')
+        self.engine.submit_allocation(
+            'LateB',
+            2,
+            {'sukuk': 20, 'saham': 20, 'rdpu': 20, 'emas': 20, 'campuran': 20},
+        )
+        _assert_matches_full_rebuild()
+
+        # Case 2: Edit right after first card of Stage 2 (Round 11: cur_round == stage_start_round)
+        self.engine.toggle_stage_input(True)
+        self.engine.draw_card()
+        self.engine.toggle_stage_input(True)
+        self.engine.submit_allocation(
+            'Round0Joiner',
+            2,
+            {'sukuk': 50, 'saham': 20, 'rdpu': 10, 'emas': 10, 'campuran': 10},
+        )
+        _assert_matches_full_rebuild()
+
+        # Case 3: Draw Round 12, mid-game joiner, and mid-stage edit
+        self.engine.toggle_stage_input(True)
+        self.engine.draw_card()
+        self.engine.register_participant('MidGameJoiner')
+        self.engine.toggle_stage_input(True)
+        self.engine.submit_allocation(
+            'Round0Joiner',
+            2,
+            {'sukuk': 0, 'saham': 100, 'rdpu': 0, 'emas': 0, 'campuran': 0},
+        )
+        _assert_matches_full_rebuild()
+
+    def test_tiered_views_non_ascii_tokens_and_unlocked_publish(self):
+        self.engine.seed_mock_participants(12)
+        self.engine.draw_card()
+
+        # 1. Public broadcast view omits participants_sync & strips history beyond Top 5
+        st_b, _, body_b = dispatch_request(server.DanarakcaRequestHandler, 'GET', '/api/state')
+        self.assertEqual(st_b, 200)
+        b_data = json.loads(body_b.decode('utf-8'))['data']
+        self.assertNotIn('participants_sync', b_data)
+        self.assertNotIn('drawn_card_ids', b_data)
+        self.assertEqual(len(b_data['leaderboard_top10']), 10)
+        self.assertIn('history', b_data['leaderboard_top10'][0])
+        self.assertNotIn('history', b_data['leaderboard_top10'][5])
+        self.assertNotIn('history', b_data['investor_tangguh_top5'][0])
+
+        # 2. Admin state sync retains participants_sync; unauthenticated state sync uses broadcast view
+        admin_token = self._login_admin()
+        st_adm, _, body_adm = dispatch_request(
+            server.DanarakcaRequestHandler,
+            'POST',
+            '/api/state/sync',
+            headers={'X-Admin-Token': admin_token},
+            body={},
+        )
+        self.assertEqual(st_adm, 200)
+        self.assertIn('participants_sync', json.loads(body_adm.decode('utf-8'))['data'])
+
+        st_anon, _, body_anon = dispatch_request(
+            server.DanarakcaRequestHandler,
+            'POST',
+            '/api/state/sync',
+            body={},
+        )
+        self.assertEqual(st_anon, 200)
+        self.assertNotIn('participants_sync', json.loads(body_anon.decode('utf-8'))['data'])
+
+        # 3. Player register & sync omit heavy leaderboard/asset_history/participant.history
+        st_reg, _, reg_body = dispatch_request(
+            server.DanarakcaRequestHandler,
+            'POST',
+            '/api/participant/register',
+            body={'name': 'LeanPlayer'},
+        )
+        self.assertEqual(st_reg, 200)
+        reg_json = json.loads(reg_body.decode('utf-8'))
+        self.assertNotIn('history', reg_json['data'])
+        self.assertNotIn('participants_sync', reg_json['state'])
+        self.assertNotIn('leaderboard_top10', reg_json['state'])
+        self.assertNotIn('asset_history', reg_json['state'])
+
+        # 4. Non-ASCII tokens fail cleanly as 401/session_expired instead of 400/500 UnicodeEncodeError
+        st_bad_adm, _, _ = dispatch_request(
+            server.DanarakcaRequestHandler,
+            'GET',
+            '/api/admin/verify',
+            headers={'X-Admin-Token': 'töken.sig'},
+        )
+        self.assertEqual(st_bad_adm, 401)
+        st_bad_pl, _, bad_pl_body = dispatch_request(
+            server.DanarakcaRequestHandler,
+            'POST',
+            '/api/player/sync',
+            headers={'X-Participant-Token': 'töken.sig'},
+            body={'name': 'LeanPlayer'},
+        )
+        self.assertEqual(st_bad_pl, 200)
+        self.assertTrue(json.loads(bad_pl_body.decode('utf-8'))['data']['session_expired'])
+
+        # 5. _publish_live_event runs outside self.engine.lock
+        lock_acquired_in_other_thread = []
+        orig_pub = self.engine._publish_live_event
+
+        def probe_publish(*args, **kwargs):
+            def check_lock():
+                acquired = self.engine.lock.acquire(blocking=False)
+                if acquired:
+                    self.engine.lock.release()
+                lock_acquired_in_other_thread.append(acquired)
+
+            t = threading.Thread(target=check_lock)
+            t.start()
+            t.join(timeout=2)
+            return orig_pub(*args, **kwargs)
+
+        self.engine._publish_live_event = probe_publish
+        try:
+            self.engine.toggle_stage_input(False)
+            self.assertEqual(lock_acquired_in_other_thread, [True])
+        finally:
+            self.engine._publish_live_event = orig_pub
+
+        # 6. min_round / min_version hints bypass 0.75s refresh throttle when behind
+        p_tok = reg_json['participant_token']
+        other_engine = GameEngine(self.tmp_dir)
+        other_engine.draw_card()  # advances state_file on disk to round 2
+        target_round = other_engine.state['current_round']
+        target_version = other_engine.state['state_version']
+
+        self.engine._last_refresh_time = time.time()
+        st_stale, _, stale_body = dispatch_request(
+            server.DanarakcaRequestHandler,
+            'POST',
+            '/api/player/sync',
+            headers={'X-Participant-Token': p_tok},
+            body={'name': 'LeanPlayer'},
+        )
+        self.assertEqual(st_stale, 200)
+        self.assertLess(json.loads(stale_body.decode('utf-8'))['data']['state']['current_round'], target_round)
+
+        st_fresh, _, fresh_body = dispatch_request(
+            server.DanarakcaRequestHandler,
+            'POST',
+            '/api/player/sync',
+            headers={'X-Participant-Token': p_tok},
+            body={'name': 'LeanPlayer', 'min_round': target_round, 'min_version': target_version},
+        )
+        self.assertEqual(st_fresh, 200)
+        fresh_state = json.loads(fresh_body.decode('utf-8'))['data']['state']
+        self.assertEqual(fresh_state['current_round'], target_round)
+        self.assertGreaterEqual(fresh_state['state_version'], target_version)
+
+        # 7. GET /api/state?min_version=... (without round bump) bypasses 0.75s throttle
+        other_engine.toggle_stage_input(True)
+        ver_after_toggle = other_engine.state['state_version']
+        self.engine._last_refresh_time = time.time()
+        st_get_stale, _, get_stale_body = dispatch_request(
+            server.DanarakcaRequestHandler,
+            'GET',
+            '/api/state',
+        )
+        self.assertEqual(st_get_stale, 200)
+        self.assertFalse(json.loads(get_stale_body.decode('utf-8'))['data']['stage_input_open'])
+
+        st_get_fresh, _, get_fresh_body = dispatch_request(
+            server.DanarakcaRequestHandler,
+            'GET',
+            f'/api/state?min_version={ver_after_toggle}',
+        )
+        self.assertEqual(st_get_fresh, 200)
+        get_fresh_state = json.loads(get_fresh_body.decode('utf-8'))['data']
+        self.assertTrue(get_fresh_state['stage_input_open'])
+        self.assertGreaterEqual(get_fresh_state['state_version'], ver_after_toggle)
+
+        # 8. /api/player/sync security: throttled container cannot hijack or bypass non-preserving reset
+        self.engine.refresh_state(force=True)
+        _, _, ghost_reg = dispatch_request(
+            server.DanarakcaRequestHandler,
+            'POST',
+            '/api/participant/register',
+            body={'name': 'ResetGhost'},
+        )
+        ghost_tok = json.loads(ghost_reg.decode('utf-8'))['participant_token']
+        ghost_code = self.engine.make_participant_code('ResetGhost')
+
+        other_engine.reset_game(preserve_participants=False, total_stages=2)
+        new_sess = other_engine.state['session_id']
+        prev_ghost_sess = server.extract_participant_token({}, {'participant_token': ghost_tok})['sid']
+        other_engine.register_participant('LeanPlayer')  # new player claims same name in new session
+        with self.engine.lock:
+            self.engine.state['participants'].pop(self.engine.make_participant_code('LeanPlayer'), None)
+            self.engine.state['participants'].pop(ghost_code, None)
+            self.engine._last_refresh_time = time.time()
+
+        st_ghost, _, ghost_body = dispatch_request(
+            server.DanarakcaRequestHandler,
+            'POST',
+            '/api/player/sync',
+            headers={'X-Participant-Token': ghost_tok},
+            body={
+                'name': 'ResetGhost',
+                'participant_sync': {
+                    'name': 'ResetGhost',
+                    'code': ghost_code,
+                    'session_id': prev_ghost_sess,
+                    'allocations': {'1': {'sukuk': 100, 'saham': 0, 'rdpu': 0, 'emas': 0, 'campuran': 0}},
+                    'alloc_ts': {'1': 9999},
+                },
+            },
+        )
+        self.assertEqual(st_ghost, 200)
+        ghost_json = json.loads(ghost_body.decode('utf-8'))['data']
+        self.assertTrue(ghost_json.get('session_expired'))
+        self.assertNotIn(ghost_code, self.engine.state['participants'])
+        other_engine.refresh_state(force=True)
+        self.assertEqual(other_engine.state['session_id'], new_sess)
+
+        # Roll self.engine back to pre-reset state temporarily to also test name-collision branch with participant_sync
+        with self.engine.lock:
+            self.engine.state['session_id'] = prev_ghost_sess
+            self.engine.state['participants'].pop(self.engine.make_participant_code('LeanPlayer'), None)
+            self.engine._last_refresh_time = time.time()
+
+        st_old_tok, _, old_tok_body = dispatch_request(
+            server.DanarakcaRequestHandler,
+            'POST',
+            '/api/player/sync',
+            headers={'X-Participant-Token': p_tok},
+            body={
+                'name': 'LeanPlayer',
+                'participant_sync': {
+                    'name': 'LeanPlayer',
+                    'code': self.engine.make_participant_code('LeanPlayer'),
+                    'session_id': prev_ghost_sess,
+                    'allocations': {'1': {'sukuk': 100, 'saham': 0, 'rdpu': 0, 'emas': 0, 'campuran': 0}},
+                    'alloc_ts': {'1': 9999},
+                },
+            },
+        )
+        self.assertEqual(st_old_tok, 200)
+        old_tok_json = json.loads(old_tok_body.decode('utf-8'))['data']
+        self.assertTrue(old_tok_json.get('session_expired'))
+        self.assertIsNone(old_tok_json.get('participant'))
+        self.assertNotIn('participant_token', old_tok_json)
+
+        # Also verify submit_allocation rejects stale nonce when new player claimed the same name
+        with self.assertRaises(PermissionError):
+            self.engine.submit_allocation(
+                self.engine.make_participant_code('LeanPlayer'),
+                1,
+                {'sukuk': 100, 'saham': 0, 'rdpu': 0, 'emas': 0, 'campuran': 0},
+                name='LeanPlayer',
+                token_payload=server.extract_participant_token({}, {'participant_token': p_tok}),
+            )
+
+        # 9. /api/player/sync never downgrades token when token_sid > cur_sess on transient fallback
+        newer_token = server.make_participant_token(
+            new_sess + 5000,
+            self.engine.make_participant_code('LeanPlayer'),
+            'LeanPlayer',
+            1,
+            self.engine.get_participant_nonce(self.engine.make_participant_code('LeanPlayer')),
+        )
+        st_no_downgrade, _, no_downgrade_body = dispatch_request(
+            server.DanarakcaRequestHandler,
+            'POST',
+            '/api/player/sync',
+            headers={'X-Participant-Token': newer_token},
+            body={'name': 'LeanPlayer'},
+        )
+        self.assertEqual(st_no_downgrade, 200)
+        no_downgrade_json = json.loads(no_downgrade_body.decode('utf-8'))['data']
+        self.assertNotIn('participant_token', no_downgrade_json)
+        self.assertFalse(no_downgrade_json.get('session_expired', False))
+
     def test_concurrent_readers_and_writers_thread_safety(self):
         self.engine.seed_mock_participants(40)
         errors = []
